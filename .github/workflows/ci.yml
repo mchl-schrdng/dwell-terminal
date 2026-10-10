@@ -45,7 +45,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npm run build
+      - run: npm run check
       - run: npm run test:app
       - run: npm run package
       - name: Test the packaged app

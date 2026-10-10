@@ -52,6 +52,23 @@ body {
     sans-serif;
   color: #e1cea9;
 }
+#orb.fallback::before {
+  content: '';
+  width: 42px;
+  height: 42px;
+  border: 3px solid #b8ccec;
+  border-radius: 47% 53% 55% 45%;
+  opacity: 0.85;
+}
+#orb.fallback.attention::before {
+  border-color: #ffc984;
+}
+#orb.fallback.error::before {
+  border-color: #ff9180;
+}
+#orb.fallback #orb-dust {
+  display: none;
+}
 #orb-count {
   position: absolute;
   right: 3px;
@@ -66,6 +83,9 @@ body {
     600 10px/18px -apple-system,
     sans-serif;
 }
+#orb.error #orb-count {
+  background: #f29a8c;
+}
 @media (prefers-reduced-transparency: reduce) {
   #orb {
     background: #1a1c22;
@@ -77,6 +97,9 @@ body {
     background: ButtonFace;
   }
   #orb-dust {
+    display: none;
+  }
+  #orb.fallback::before {
     display: none;
   }
   #orb-core {

@@ -18,10 +18,14 @@ async function main() {
     appCategoryType: 'public.app-category.developer-tools',
     icon: path.resolve(__dirname, '../assets/Dwell.icns'),
     asar: { unpack: '**/node-pty/**' },
+    extraResource: ['orb-notification.wav', 'claude-hook.sh'].map((name) =>
+      path.resolve(__dirname, '../src', name),
+    ),
     // Ship only the runtime, without caches, tests, source assets or repo metadata.
     ignore: (file) =>
-      file !== '' &&
-      !/^\/(src(?:\/|$)|dist(?:\/|$)|node_modules(?:\/|$)|package\.json$|LICENSE$)/.test(file),
+      ['/src/orb-notification.wav', '/src/claude-hook.sh'].includes(file) ||
+      (file !== '' &&
+        !/^\/(src(?:\/|$)|dist(?:\/|$)|node_modules(?:\/|$)|package\.json$|LICENSE$)/.test(file)),
     download: { cacheRoot: path.resolve(__dirname, '../.electron-cache') },
   });
   const archive = path.resolve(__dirname, '../release', `Dwell-${version}-macos-arm64.zip`);

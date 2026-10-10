@@ -18,6 +18,10 @@ const pty = require('node-pty');
 const { resolveFile, listFiles, readPreview, friendlyError, quotePaths } = require('./files.cjs');
 const { listChanges, readDiff } = require('./git.cjs');
 const { createAttention } = require('./attention.cjs');
+const { setClaudeIntegration, isClaudeIntegrationEnabled } = require('./claude.cjs');
+const claudeConfig = path.resolve(
+  process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'),
+);
 
 app.setName('Dwell');
 nativeTheme.themeSource = 'dark';
@@ -324,6 +328,10 @@ handle('terminal:start', (state, id, cols, rows) => {
     COLORTERM: 'truecolor',
     TERM_PROGRAM: 'Dwell',
     TERM_PROGRAM_VERSION: app.getVersion(),
+    DWELL_CLAUDE_HOOK: path.join(
+      app.isPackaged ? process.resourcesPath : __dirname,
+      'claude-hook.sh',
+    ),
   };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.NODE_OPTIONS;
@@ -356,7 +364,10 @@ handle('terminal:start', (state, id, cols, rows) => {
   });
   processHandle.onExit(({ exitCode }) => {
     session.process = null;
-    if (state.sessions.get(id) === session) send(state, 'terminal:exit', { id, exitCode });
+    if (state.sessions.get(id) === session) {
+      attention.clear(state, id);
+      send(state, 'terminal:exit', { id, exitCode });
+    }
   });
   return { shell: path.basename(loginShell) };
 });
@@ -393,18 +404,28 @@ ipcMain.on('terminal:bell', (event, id, label) => {
     attention.bell(validState(event), id, label);
   } catch {}
 });
+ipcMain.on('terminal:progress', (event, id, value, label) => {
+  try {
+    attention.progress(validState(event), id, value, label);
+  } catch {}
+});
 ipcMain.on('terminal:active', (event, id) => {
   try {
     const state = validState(event);
     if (typeof id !== 'string' || !/^[a-f0-9-]{36}$/.test(id)) return;
     state.activeSession = id;
-    if (state.window.isFocused()) attention.clear(state, id);
+    if (!app.isHidden() && state.window.isFocused()) attention.acknowledge(state, id);
   } catch {}
 });
 ipcMain.on('terminal:input', (event, id, data) => {
   try {
-    const session = validState(event).sessions.get(id);
-    if (typeof data === 'string' && data.length <= 2 * 1024 * 1024) session?.process?.write(data);
+    const state = validState(event);
+    const session = state.sessions.get(id);
+    if (typeof data === 'string' && data.length <= 2 * 1024 * 1024) {
+      // Claude does not emit Stop when the user interrupts a turn.
+      if (data === '\u0003' || data === '\u001b') attention.interrupt(state, id);
+      session?.process?.write(data);
+    }
   } catch {}
 });
 ipcMain.on('terminal:resize', (event, id, cols, rows) => {
@@ -521,6 +542,16 @@ app.whenReady().then(async () => {
               }),
           },
           {
+            id: 'notification-sound',
+            label: 'Notification Sound',
+            type: 'checkbox',
+            checked: preferences.notificationSound !== false,
+            click: (item) => {
+              preferences.notificationSound = item.checked;
+              savePreferences();
+            },
+          },
+          {
             label: 'Next Terminal',
             accelerator: 'CmdOrCtrl+Shift+]',
             click: action('next-terminal'),
@@ -539,15 +570,29 @@ app.whenReady().then(async () => {
         role: 'help',
         submenu: [
           {
-            label: 'Claude Code Alerts…',
-            click: () =>
-              dialog.showMessageBox({
-                type: 'info',
-                message: 'Let Claude Code notify Dwell',
-                detail:
-                  'In your Claude Code settings (~/.claude/settings.json), set "preferredNotifChannel" to "terminal_bell".\n\nDwell marks the terminal that needs attention. Enable View → Desktop Orb for a quiet desktop indicator; click it to return to that terminal. Drag the orb to move it, or right-click to hide it.\n\nWhen the orb is off, background alerts use macOS notifications.',
-                buttons: ['OK'],
-              }),
+            id: 'claude-integration',
+            label: 'Claude Code Integration',
+            type: 'checkbox',
+            checked: await isClaudeIntegrationEnabled(claudeConfig).catch(() => false),
+            click: async (item) => {
+              const enabled = item.checked;
+              try {
+                await setClaudeIntegration(claudeConfig, enabled);
+                await dialog.showMessageBox({
+                  type: 'info',
+                  message: enabled
+                    ? 'Claude Code integration enabled'
+                    : 'Claude Code integration disabled',
+                  detail: enabled
+                    ? 'Start a new Claude session in Dwell. The orb stays cool while working, turns amber when Claude needs you or finishes a response, and red when an API error stops the response. Sounds play for background alerts.\n\nYour other Claude settings and hooks are preserved. These hooks are active only in Dwell.'
+                    : 'Dwell’s hooks have been removed. Your other Claude settings and hooks are preserved. Restart existing Claude sessions to apply the change.',
+                  buttons: ['OK'],
+                });
+              } catch (error) {
+                item.checked = !enabled;
+                dialog.showErrorBox('Claude Code Integration', error.message);
+              }
+            },
           },
         ],
       },

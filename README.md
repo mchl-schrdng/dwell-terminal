@@ -43,19 +43,15 @@ Choose **Changes** above the file tree to review staged and unstaged edits separ
 
 Drag a file from **Files**, **Changes**, or Finder into a running terminal to insert its quoted absolute path. This works after changing directories and handles spaces and apostrophes. Dropping a file does not press Enter. Up to 32 files can be dropped from Finder at once; paths containing control characters are rejected.
 
-When a terminal rings its bell, Dwell marks its tab if you are elsewhere. **View → Desktop Orb** enables a small cloud of dust above your desktop windows. Its particles drift slowly in silver blue at rest, turn amber and move more freely for an alert, and become copper when several terminals are waiting. Colors and movement ease back to idle as alerts are opened. Click to open the waiting terminal, drag to move, or right-click to hide. Reduced motion stops the animation while preserving the color and count; reduced transparency adds a solid backing. Its position and enabled state are saved. It is off by default. With the orb off, background alerts use silent macOS notifications, subject to your system notification settings. Repeated alerts from the same pending terminal are grouped.
+Enable **Help → Claude Code Integration**, then start a new interactive Claude Code session (2.1.141 or later). Dwell installs a small set of official Claude hooks, preserving your other settings and hooks. They only run inside Dwell. Use the same menu to remove them. No extra package, daemon or conversation reader is needed.
 
-The orb reacts to requests for attention, not to launching Claude or to ongoing work. Alerts appear when another terminal is selected or Dwell is in the background.
+**View → Desktop Orb** adds Eclipse: a small, fluid ring of light. It stays cool while Claude works, turns amber and moves twice as fast when Claude needs input or finishes a response, and turns red when an API error interrupts the response. A failed tool that Claude can recover from does not trigger a red alert. The movement at rest is decorative.
 
-To have Claude Code send these alerts, add this setting to your existing `~/.claude/settings.json`, preserving its other settings:
+Click the orb to return to the most urgent terminal, drag to move, or right-click to hide. Reading an alert clears its unread marker; further work or a new prompt updates its state. The orb remembers its position, respects reduced motion and has a static fallback without WebGL.
 
-```json
-{
-  "preferredNotifChannel": "terminal_bell"
-}
-```
+Background alerts play a quiet, original spatial chime. **View → Notification Sound** mutes it. Duplicate alerts are grouped, and macOS notifications take over when the orb is off or Dwell is hidden, subject to your system settings. Ordinary terminal bells remain supported outside a structured Claude session.
 
-See [Claude Code's terminal configuration](https://code.claude.com/docs/en/terminal-config#get-a-terminal-bell-or-notification) for notification timing. **Help → Claude Code Alerts…** also explains the setup. Dwell does not change your Claude settings or inspect conversation transcripts. The orb reports a request for attention, not whether a task succeeded.
+A finished response is not proof that all work succeeded. Abrupt process crashes may emit no event. See [Claude event coverage and limits](docs/claude-notifications.md).
 
 ## Development
 

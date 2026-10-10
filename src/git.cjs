@@ -9,16 +9,37 @@ const MAX_CHANGES = 1000;
 
 async function git(root, args) {
   try {
+    const options = {
+      cwd: root,
+      env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C', DWELL_GIT_NO_FILTER: '' },
+      encoding: 'utf8',
+      maxBuffer: MAX_TEXT_BYTES,
+      timeout: 5000,
+    };
+    // Status and diff can execute clean/process filters even with --no-ext-diff.
+    const { stdout: filters } = await execute(
+      'git',
+      [
+        'config',
+        '--includes',
+        '--null',
+        '--name-only',
+        '--get-regexp',
+        '^filter\\..*\\.(clean|process|required)$',
+      ],
+      options,
+    ).catch((error) => {
+      if (error.code === 1) return { stdout: '' };
+      throw error;
+    });
+    const disabled = filters
+      .split('\0')
+      .filter(Boolean)
+      .map((key) => `--config-env=${key}=DWELL_GIT_NO_FILTER`);
     const { stdout } = await execute(
       'git',
-      ['--no-pager', '--literal-pathspecs', '-c', 'core.fsmonitor=false', ...args],
-      {
-        cwd: root,
-        env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' },
-        encoding: 'utf8',
-        maxBuffer: MAX_TEXT_BYTES,
-        timeout: 5000,
-      },
+      ['--no-pager', '--literal-pathspecs', '-c', 'core.fsmonitor=false', ...disabled, ...args],
+      options,
     );
     return stdout;
   } catch (error) {

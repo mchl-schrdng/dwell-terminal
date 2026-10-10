@@ -543,7 +543,15 @@ async function createTerminal(savedLabel) {
   term.loadAddon(new WebLinksAddon((_event, url) => api.openLink(url).catch(report)));
   term.open(pane);
   term.onData((data) => api.input(id, data));
+  term.onKey(({ domEvent }) => {
+    if (domEvent.key === 'Enter') api.active(id);
+  });
   term.onBell(() => api.bell(id, session.label));
+  term.parser.registerOscHandler(9, (data) => {
+    if (!/^4;[0-4](?:;(?:100|[0-9]{1,2}))?$/.test(data)) return false;
+    api.progress(id, Number(data[2]), session.label);
+    return true;
+  });
   term.onResize(({ cols, rows }) => {
     if (session.running) api.resize(id, cols, rows);
   });
@@ -631,11 +639,15 @@ api.onData(({ id, data }) => {
   const session = sessions.get(id);
   if (session) session.terminal.write(data, () => api.ack(id, data.length));
 });
-api.onAttention(({ id, pending }) => {
+api.onAttention(({ id, pending, status }) => {
   const session = sessions.get(id);
   if (!session) return;
   session.tabItem.classList.toggle('needs-attention', pending);
-  if (pending) session.tab.setAttribute('aria-description', 'Terminal needs attention');
+  if (pending)
+    session.tab.setAttribute(
+      'aria-description',
+      status === 'error' ? 'Response interrupted' : 'Terminal needs attention',
+    );
   else session.tab.removeAttribute('aria-description');
 });
 api.onFocusTerminal((id) => {
