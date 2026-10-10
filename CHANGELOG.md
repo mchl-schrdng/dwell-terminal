@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.0
+
+- Add built-in Claude Code integration using official lifecycle hooks, with one-click setup and removal that preserve existing settings.
+- Distinguish work, requests for attention and blocking API errors; ignore subagent activity and recoverable tool failures.
+- Replace dust with Eclipse, a fluid ring that moves twice as fast in amber and pulses slowly in red, with an original quiet stereo chime.
+- Keep activity separate from unread alerts, route the orb to the most urgent terminal, suppress duplicate bells, and reset on interruptions and terminal exits.
+- Validate the native hook, real terminal escape sequences, settings preservation, multiple tabs, accessibility and packaged resources.
+
+## 0.2.0 (local preview)
+
+- Replace the rotating orb with a continuously drifting dust cloud and two clear states: idle and attention.
+- Add a soft, optional notification sound; coalesce repeated alerts and limit sound bursts.
+- Keep background notifications visible when hiding Dwell also hides its orb.
+- Prevent Git previews from executing repository-defined clean and process filters. Filtered files are compared without transformation.
+- Verify real terminal alerts while the app is hidden, animation pause/resume and saved sound preferences.
+
 ## 0.1.1
 
 - Keep typed input and the last terminal row visible above the status bar after scrolling and resizing.

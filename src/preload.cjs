@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('dwell', {
   resize: (id, cols, rows) => ipcRenderer.send('terminal:resize', id, cols, rows),
   ack: (id, size) => ipcRenderer.send('terminal:ack', id, size),
   bell: (id, label) => ipcRenderer.send('terminal:bell', id, label),
+  progress: (id, value, label) => ipcRenderer.send('terminal:progress', id, value, label),
   active: (id) => ipcRenderer.send('terminal:active', id),
   copy: (text) => call('clipboard:write', text),
   paste: () => call('clipboard:read'),

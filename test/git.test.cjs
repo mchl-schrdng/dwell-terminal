@@ -110,6 +110,43 @@ test('repository-defined diff, textconv and fsmonitor commands never run', async
   await assert.rejects(fs.stat(marker), { code: 'ENOENT' });
 });
 
+test('status and diff never execute clean or process filters, including required filters', async (t) => {
+  const { root, git } = await repository(t);
+  const marker = path.join(root, 'FILTER_EXECUTED');
+  const filter = path.join(root, 'filter.sh');
+  const filename = path.join(root, 'file.txt');
+  await fs.writeFile(filename, 'before\n');
+  git('add', 'file.txt');
+  git('commit', '-qm', 'Initial');
+  await fs.writeFile(filename, 'staged\n');
+  git('add', 'file.txt');
+  await fs.writeFile(filename, 'after!\n');
+  await fs.writeFile(filter, '#!/bin/sh\ntouch "' + marker + '"\ncat\n', { mode: 0o755 });
+  const config = path.join(root, '.git', 'filters');
+  git('config', 'include.path', config);
+  const index = await fs.readFile(path.join(root, '.git', 'index'));
+  for (const [kind, name] of [
+    ['clean', 'unsafe'],
+    ['process', 'unsafe=filter'],
+  ]) {
+    await fs.writeFile(path.join(root, '.gitattributes'), `*.txt filter=${name}\n`);
+    await fs.writeFile(config, `[filter "${name}"]\n\t${kind} = "${filter}"\n\trequired = true\n`);
+    const entries = (await listChanges(root)).entries;
+    assert(entries.some((entry) => entry.path === 'file.txt' && entry.status === 'MM'));
+    await assert.rejects(fs.stat(marker), { code: 'ENOENT' });
+    const diff = await readDiff(root, 'file.txt');
+    assert.deepEqual(
+      diff.sections.map((section) => section.label),
+      ['Staged', 'Unstaged'],
+    );
+    assert.match(diff.sections[0].text, /\+staged/);
+    assert.match(diff.sections[1].text, /\+after!/);
+    await assert.rejects(fs.stat(marker), { code: 'ENOENT' });
+    assert.deepEqual(await fs.readFile(path.join(root, '.git', 'index')), index);
+    assert.equal(git('config', `filter.${name}.${kind}`).trim(), filter);
+  }
+});
+
 test('dropped paths survive shell quoting without executing their contents', () => {
   const names = ["/tmp/café's screenshot.png", '/tmp/$(printf BAD)`printf BAD`;*.txt'];
   const output = execFileSync('/bin/sh', ['-c', 'printf "%s\\n" ' + quotePaths(names)], {

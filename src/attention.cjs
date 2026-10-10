@@ -1,28 +1,59 @@
 const { BrowserWindow, Menu, Notification, ipcMain, screen, app } = require('electron');
 const path = require('node:path');
+const childProcess = require('node:child_process');
 
 function createAttention(windows, preferences, savePreferences) {
-  const pending = new Map();
+  const items = new Map();
   let orb;
   let drag;
+  let lastSound = 0;
+
+  function status(item) {
+    return item.acknowledged && item.status !== 'working' ? 'idle' : item.status;
+  }
+
+  function first() {
+    const priority = { idle: 0, working: 1, attention: 2, error: 3 };
+    let selected;
+    for (const item of items.values())
+      if (priority[status(item)] > (selected ? priority[status(selected)] : 0)) selected = item;
+    return selected;
+  }
 
   function update() {
     if (!orb || orb.isDestroyed()) return;
-    const first = pending.values().next().value;
+    const item = first();
     orb.webContents.send('orb:state', {
-      count: pending.size,
-      label: first ? `${path.basename(first.state.root)} · ${first.label}` : 'Dwell',
+      count: [...items.values()].filter((entry) => entry.pending).length,
+      status: item ? status(item) : 'idle',
+      label: item ? `${path.basename(item.state.root)} · ${item.label}` : 'Dwell',
     });
   }
 
+  function dismiss(item) {
+    item.notification?.close();
+    item.notification = null;
+    item.pending = false;
+    if (!item.state.window.isDestroyed())
+      item.state.window.webContents.send('terminal:attention', { id: item.id, pending: false });
+  }
+
   function clear(state, id) {
-    for (const [key, item] of pending) {
+    for (const [key, item] of items) {
       if (item.state !== state || (id && item.id !== id)) continue;
-      item.notification?.close();
-      pending.delete(key);
-      if (!state.window.isDestroyed())
-        state.window.webContents.send('terminal:attention', { id: item.id, pending: false });
+      dismiss(item);
+      items.delete(key);
     }
+    update();
+  }
+
+  function acknowledge(state, id) {
+    const key = `${state.window.webContents.id}:${id}`;
+    const item = items.get(key);
+    if (!item) return;
+    dismiss(item);
+    item.acknowledged = true;
+    if (!item.typed) items.delete(key);
     update();
   }
 
@@ -36,21 +67,53 @@ function createAttention(windows, preferences, savePreferences) {
     app.focus({ steal: true });
     state.window.focus();
     if (item && state.sessions.has(item.id)) {
-      clear(state, item.id);
+      acknowledge(state, item.id);
     }
   }
 
-  function bell(state, id, label) {
-    if (!state.sessions.has(id) || (state.window.isFocused() && state.activeSession === id)) return;
+  function signal(state, id, label, nextStatus, typed) {
+    if (!state.sessions.get(id)?.process) return;
+    const focused = !app.isHidden() && state.window.isFocused();
     const key = `${state.window.webContents.id}:${id}`;
-    if (pending.has(key)) return;
-    const item = { state, id, label: typeof label === 'string' ? label.slice(0, 80) : 'Terminal' };
-    pending.set(key, item);
-    state.window.webContents.send('terminal:attention', { id, pending: true });
+    const previous = items.get(key);
+    if (!typed && (previous?.typed || (focused && state.activeSession === id))) return;
+    if (typed && previous?.status === 'error' && nextStatus === 'attention') return;
+    if (previous?.status === nextStatus && previous.typed === typed) return;
+    if (previous) dismiss(previous);
+    const alert = nextStatus === 'attention' || nextStatus === 'error';
+    const item = {
+      state,
+      id,
+      typed,
+      status: nextStatus,
+      acknowledged: false,
+      pending: alert && !(focused && state.activeSession === id),
+      label: typeof label === 'string' ? label.slice(0, 80) : 'Terminal',
+    };
+    items.set(key, item);
+    state.window.webContents.send('terminal:attention', {
+      id,
+      pending: item.pending,
+      status: nextStatus,
+    });
     update();
-    if (!orb && !state.window.isFocused() && Notification.isSupported()) {
+    if (!item.pending) return;
+    if (preferences.notificationSound !== false && Date.now() - lastSound > 1500) {
+      lastSound = Date.now();
+      childProcess.execFile(
+        '/usr/bin/afplay',
+        [path.join(app.isPackaged ? process.resourcesPath : __dirname, 'orb-notification.wav')],
+        (error) => {
+          if (error) console.error('Could not play notification sound:', error.message);
+        },
+      );
+    }
+    if ((!orb?.isVisible() || app.isHidden()) && !focused && Notification.isSupported()) {
       const notification = new Notification({
-        title: 'Dwell · Terminal needs attention',
+        title:
+          nextStatus === 'error'
+            ? 'Dwell · Response interrupted'
+            : 'Dwell · Terminal needs attention',
         body: `${path.basename(state.root)} · ${item.label}`,
         silent: true,
       });
@@ -58,6 +121,22 @@ function createAttention(windows, preferences, savePreferences) {
       notification.on('click', () => open(item));
       notification.show();
     }
+  }
+
+  function progress(state, id, value, label) {
+    if (!state.sessions.get(id)?.process || !Number.isInteger(value) || value < 0 || value > 4)
+      return;
+    if (value === 0) clear(state, id);
+    else
+      signal(state, id, label, ['idle', 'working', 'error', 'working', 'attention'][value], true);
+  }
+
+  function interrupt(state, id) {
+    if (items.get(`${state.window.webContents.id}:${id}`)?.typed) clear(state, id);
+  }
+
+  function bell(state, id, label) {
+    signal(state, id, label, 'attention', false);
   }
 
   function position(x, y) {
@@ -138,7 +217,7 @@ function createAttention(windows, preferences, savePreferences) {
     if (orb !== window || window.isDestroyed()) return;
     update();
     window.showInactive();
-    for (const item of pending.values()) item.notification?.close();
+    for (const item of items.values()) item.notification?.close();
   }
 
   function validOrb(event) {
@@ -151,7 +230,7 @@ function createAttention(windows, preferences, savePreferences) {
     );
   }
   ipcMain.on('orb:open', (event) => {
-    if (validOrb(event)) open(pending.values().next().value);
+    if (validOrb(event)) open(first());
   });
   ipcMain.on('orb:drag', (event, phase) => {
     if (!validOrb(event)) return;
@@ -172,7 +251,7 @@ function createAttention(windows, preferences, savePreferences) {
       savePreferences();
     }
   });
-  return { bell, clear, setEnabled, destroyOrb };
+  return { bell, progress, interrupt, acknowledge, clear, setEnabled, destroyOrb };
 }
 
 module.exports = { createAttention };

@@ -1,62 +1,103 @@
 const button = document.querySelector('#orb');
 const canvas = document.querySelector('#orb-dust');
-const context = canvas.getContext('2d');
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const forcedColors = matchMedia('(forced-colors: active)');
-const particles = Array.from({ length: 180 }, (_, index) => {
-  const fraction = (value) => value - Math.floor(value);
-  const z = fraction(index * 0.754877666) * 2 - 1;
-  const angle = index * 2.39996323;
-  const radius = 8 + Math.sqrt(fraction(index * 0.569840291)) * 19;
-  const ring = Math.sqrt(1 - z * z) * radius;
-  return {
-    x: Math.cos(angle) * ring,
-    y: Math.sin(angle) * ring,
-    z: z * radius,
-    phase: angle,
-    size: 0.35 + fraction(index * 0.438579) * 0.55,
-  };
-});
-let count = 0;
-let energy = 0;
-let time = 0;
+let status = 'idle';
+let time = 18;
+let warmth = 0;
+let failure = 0;
+let speed = 0.8;
 let lastFrame = 0;
 let frame;
-const color = [178, 192, 215];
-const palettes = [
-  [178, 192, 215],
-  [235, 194, 128],
-  [239, 158, 131],
-];
+let scene;
+
+function createScene() {
+  const gl = canvas.getContext('webgl', {
+    alpha: true,
+    antialias: true,
+    premultipliedAlpha: false,
+    preserveDrawingBuffer: true,
+    depth: false,
+    powerPreference: 'low-power',
+  });
+  if (!gl) throw new Error('WebGL unavailable');
+  const program = gl.createProgram();
+  const sources = [
+    [
+      gl.VERTEX_SHADER,
+      `attribute vec2 p; varying vec2 uv;
+      void main(){uv=p;gl_Position=vec4(p,0.,1.);}`,
+    ],
+    [
+      gl.FRAGMENT_SHADER,
+      `
+      precision highp float;
+      varying vec2 uv;
+      uniform float t, energy, failure;
+      mat2 turn(float a){return mat2(cos(a),-sin(a),sin(a),cos(a));}
+      void main(){
+        vec2 p=turn(t*.055)*(uv*.9);
+        p.x+=.055*sin(p.y*6.+t*.4);p.y+=.07*sin(p.x*5.-t*.32);
+        float r=length(p),a=atan(p.y,p.x);
+        float ring=.44+.047*sin(a*3.+t*.5)+.028*cos(a*5.-t*.36);
+        float d=r-ring;
+        float orbit=exp(-d*d/(.087*.087));
+        float swirl=.55+.45*sin(a*3.-t*.64+r*15.+sin(a*2.+t*.4));
+        float fine=pow(.5+.5*sin(d*160.+a*7.-t*.8),7.);
+        float vapor=exp(-d*d/(.16*.16))*(.5+.5*sin(a*4.-t*.3+r*23.))*.17;
+        vec3 aCol=mix(vec3(.30,.43,.68),vec3(.82,.32,.21),energy);
+        vec3 bCol=mix(vec3(.72,.8,.92),vec3(1.,.79,.52),energy);
+        aCol=mix(aCol,vec3(.72,.17,.18),failure);
+        bCol=mix(bCol,vec3(1.,.57,.50),failure);
+        vec3 color=mix(aCol,bCol,swirl)+vec3(.24,.29,.33)*fine;
+        float alpha=clamp(orbit*(.24+swirl*.5+fine*.25)+vapor,0.,1.);
+        alpha*=smoothstep(.2,.3,r)*(1.-failure*(.12+.12*cos(t*2.)));
+        gl_FragColor=vec4(color,alpha);
+      }`,
+    ],
+  ];
+  for (const [type, source] of sources) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
+      throw new Error(gl.getShaderInfoLog(shader));
+    gl.attachShader(program, shader);
+    gl.deleteShader(shader);
+  }
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS))
+    throw new Error(gl.getProgramInfoLog(program));
+  gl.useProgram(program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+    gl.STATIC_DRAW,
+  );
+  const position = gl.getAttribLocation(program, 'p');
+  gl.enableVertexAttribArray(position);
+  gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+  return {
+    gl,
+    time: gl.getUniformLocation(program, 't'),
+    energy: gl.getUniformLocation(program, 'energy'),
+    failure: gl.getUniformLocation(program, 'failure'),
+  };
+}
 
 function draw(delta) {
-  const level = Math.min(count, 2);
-  const blend = reducedMotion.matches ? 1 : 1 - Math.exp(-delta * 2.3);
-  energy += (level - energy) * blend;
-  for (let i = 0; i < color.length; i++) color[i] += (palettes[level][i] - color[i]) * blend;
-  time += delta * (0.15 + energy * 0.13);
-  const turn = reducedMotion.matches ? 0 : time;
-  const cosine = Math.cos(turn);
-  const sine = Math.sin(turn);
-  const breathe = 1 + Math.sin(turn * 2.1) * (0.035 + energy * 0.02);
-  context.clearRect(0, 0, 88, 88);
-  context.fillStyle = `rgb(${color.join(' ')})`;
-  for (const particle of particles) {
-    const depth = particle.x * sine + particle.z * cosine;
-    const flow = reducedMotion.matches ? 0 : Math.sin(turn * 1.7 + particle.phase) * (2 + energy);
-    const x = 44 + (particle.x * cosine - particle.z * sine) * breathe + flow;
-    const y = 44 + (particle.y + Math.sin(turn + particle.phase) * 2) * breathe;
-    const size = particle.size * (1 + (depth + 27) / 85);
-    const opacity = 0.22 + ((depth + 27) / 54) * 0.58;
-    context.globalAlpha = opacity * 0.08;
-    context.beginPath();
-    context.arc(x, y, size * 3.5, 0, Math.PI * 2);
-    context.fill();
-    context.globalAlpha = opacity;
-    context.beginPath();
-    context.arc(x, y, size, 0, Math.PI * 2);
-    context.fill();
-  }
+  if (!scene || forcedColors.matches) return;
+  const blend = reducedMotion.matches ? 1 : 1 - Math.exp(-delta * 3.5);
+  warmth += (Number(status === 'attention') - warmth) * blend;
+  failure += (Number(status === 'error') - failure) * blend;
+  const targetSpeed = status === 'attention' ? 1.6 : status === 'error' ? 0.42 : 0.8;
+  speed += (targetSpeed - speed) * blend;
+  if (!reducedMotion.matches) time += delta * speed;
+  scene.gl.uniform1f(scene.time, time);
+  scene.gl.uniform1f(scene.energy, warmth);
+  scene.gl.uniform1f(scene.failure, failure);
+  scene.gl.drawArrays(scene.gl.TRIANGLES, 0, 6);
 }
 
 function animate(now) {
@@ -69,35 +110,68 @@ function animate(now) {
 
 function refresh() {
   cancelAnimationFrame(frame);
-  const scale = Math.min(devicePixelRatio || 1, 2);
-  canvas.width = canvas.height = Math.round(88 * scale);
-  context.setTransform(scale, 0, 0, scale, 0, 0);
+  if (!scene || document.hidden) return;
+  const pixels = Math.round(88 * Math.min(devicePixelRatio || 1, 2));
+  if (canvas.width !== pixels) canvas.width = canvas.height = pixels;
+  scene.gl.viewport(0, 0, pixels, pixels);
   draw(0);
-  if (!document.hidden && !reducedMotion.matches && !forcedColors.matches) {
+  if (!reducedMotion.matches && !forcedColors.matches) {
     lastFrame = performance.now();
     frame = requestAnimationFrame(animate);
   }
 }
+
+function initialize() {
+  try {
+    scene = createScene();
+    button.classList.remove('fallback');
+  } catch (error) {
+    scene = null;
+    button.classList.add('fallback');
+    console.warn('Desktop orb uses its static fallback:', error.message);
+  }
+  refresh();
+}
+canvas.addEventListener('webglcontextlost', (event) => {
+  event.preventDefault();
+  cancelAnimationFrame(frame);
+  scene = null;
+  button.classList.add('fallback');
+});
+canvas.addEventListener('webglcontextrestored', initialize);
 reducedMotion.addEventListener('change', refresh);
 forcedColors.addEventListener('change', refresh);
 document.addEventListener('visibilitychange', refresh);
 window.addEventListener('resize', refresh);
-refresh();
+initialize();
 
 let start;
 let moved = false;
 window.orb.onState((state) => {
   const { label } = state;
-  count = state.count;
-  button.classList.toggle('attention', count > 0);
-  document.querySelector('#orb-core').textContent = count ? '!' : '·';
+  const count = state.count;
+  status = state.status || (count ? 'attention' : 'idle');
+  button.dataset.status = status;
+  button.classList.toggle('attention', status === 'attention');
+  button.classList.toggle('error', status === 'error');
+  document.querySelector('#orb-core').textContent =
+    status === 'attention' || status === 'error' ? '!' : '·';
   const badge = document.querySelector('#orb-count');
   badge.hidden = count < 2;
   badge.textContent = count;
-  const title = count ? `${label} needs attention (${count})` : 'Open Dwell';
+  const subject = label || 'Claude';
+  const suffix = count ? ` (${count})` : '';
+  const title =
+    status === 'error'
+      ? `${subject} encountered an error${suffix}`
+      : status === 'attention'
+        ? `${subject} needs attention${suffix}`
+        : status === 'working'
+          ? 'Claude is working · Open Dwell'
+          : 'Open Dwell';
   button.setAttribute('aria-label', title);
   button.title = `${title} · Drag to move · Right-click to hide`;
-  if (reducedMotion.matches) draw(0);
+  if (reducedMotion.matches && !document.hidden) draw(0);
 });
 button.addEventListener('pointerdown', (event) => {
   if (event.button !== 0) return;

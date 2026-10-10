@@ -57,7 +57,13 @@ async function until(check, description, timeout = 12000) {
     path.join(profile, '.zshrc'),
     "PROMPT='DWELL_TEST_READY> '\nRPROMPT=''\nunset HISTFILE\n",
   );
-  const env = { ...process.env, DWELL_USER_DATA: profile, SHELL: '/bin/zsh', ZDOTDIR: profile };
+  const env = {
+    ...process.env,
+    DWELL_USER_DATA: profile,
+    CLAUDE_CONFIG_DIR: path.join(profile, 'claude'),
+    SHELL: '/bin/zsh',
+    ZDOTDIR: profile,
+  };
   delete env.ELECTRON_RUN_AS_NODE;
   let application;
   let page;
@@ -431,6 +437,21 @@ async function until(check, description, timeout = 12000) {
         const item = Menu.getApplicationMenu().getMenuItemById('desktop-orb');
         if (item.checked !== checked) await item.click(item);
       }, checked);
+    const enableSound = (checked) =>
+      application.evaluate(({ Menu }, checked) => {
+        const item = Menu.getApplicationMenu().getMenuItemById('notification-sound');
+        if (item.checked !== checked) item.click(item);
+      }, checked);
+    await application.evaluate(() => {
+      const childProcess = process.getBuiltinModule('child_process');
+      global.originalExecFile = childProcess.execFile;
+      global.testSounds = [];
+      childProcess.execFile = (file, ...args) => {
+        if (file !== '/usr/bin/afplay') return global.originalExecFile(file, ...args);
+        global.testSounds.push(args[0]);
+        args.at(-1)(null);
+      };
+    });
     assert.equal(
       await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length),
       1,
@@ -514,6 +535,19 @@ async function until(check, description, timeout = 12000) {
     const dustImage = () => orb.locator('#orb-dust').evaluate((canvas) => canvas.toDataURL());
     const firstDustFrame = await dustImage();
     await until(async () => (await dustImage()) !== firstDustFrame, 'desktop dust moves');
+    // Playwright forces visibility; simulate the browser's event to check our animation lifecycle.
+    await orb.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    const hiddenDust = await dustImage();
+    await delay(180);
+    assert.equal(await dustImage(), hiddenDust, 'hidden dust stops drawing');
+    await orb.evaluate(() => {
+      delete document.hidden;
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await until(async () => (await dustImage()) !== hiddenDust, 'visible dust resumes drifting');
     await orb.emulateMedia({ reducedMotion: 'reduce' });
     await delay(100);
     const stillDust = await dustImage();
@@ -521,7 +555,12 @@ async function until(check, description, timeout = 12000) {
     assert.equal(await dustImage(), stillDust, 'reduced motion leaves a still cloud');
     const dustWarmth = () =>
       orb.locator('#orb-dust').evaluate((canvas) => {
-        const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+        const snapshot = document.createElement('canvas');
+        snapshot.width = canvas.width;
+        snapshot.height = canvas.height;
+        const context = snapshot.getContext('2d');
+        context.drawImage(canvas, 0, 0);
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
         let warmth = 0;
         for (let i = 0; i < pixels.length; i += 4)
           warmth += (pixels[i] - pixels[i + 2]) * pixels[i + 3];
@@ -543,6 +582,23 @@ async function until(check, description, timeout = 12000) {
       window.dwell.bell(id, 'Terminal 1');
     }, firstId);
     assert.equal(await orb.locator('#orb-count').textContent(), '1');
+    assert.deepEqual(
+      await application.evaluate(() => global.testSounds),
+      [
+        [
+          await application.evaluate(({ app }) =>
+            process
+              .getBuiltinModule('path')
+              .join(
+                app.isPackaged ? process.resourcesPath : app.getAppPath() + '/src',
+                'orb-notification.wav',
+              ),
+          ),
+        ],
+      ],
+      'one quiet sound for a new alert, none for duplicates',
+    );
+    await enableSound(false);
     assert.deepEqual(
       await orb.evaluate(() => ({ bridge: typeof window.dwell, node: typeof window.require })),
       { bridge: 'undefined', node: 'undefined' },
@@ -584,37 +640,215 @@ async function until(check, description, timeout = 12000) {
     await command('exit');
     await page.waitForSelector('#restart-terminal:not([hidden])');
     await page.getByRole('button', { name: 'Close Terminal 3', exact: true }).click();
-    await enableOrb(false);
-    await until(
-      () => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length === 1),
-      'disabling the orb destroys its window',
-    );
-    await application.evaluate(({ Notification, BrowserWindow }) => {
+    await application.evaluate(({ Notification }) => {
       global.originalNotificationShow = Notification.prototype.show;
       global.testNotifications = [];
       Notification.prototype.show = function () {
         global.testNotifications.push(this);
       };
-      BrowserWindow.getAllWindows()
-        .find((window) => window.webContents.getURL() === 'dwell://app/index.html')
-        .hide();
     });
-    await page.evaluate((id) => window.dwell.bell(id, 'Terminal 1'), firstId);
+    await command("sleep 1; printf '\\a'");
+    await application.evaluate(({ app }) => app.hide());
     await until(
       () => application.evaluate(() => global.testNotifications.length === 1),
-      'background alert uses native notification with orb disabled',
+      'real BEL reaches a native notification when Cmd-H also hides the orb',
     );
-    await application.evaluate(({ Notification }) => {
+    await until(
+      async () => (await page.locator('.needs-attention').count()) === 1,
+      'hidden app still processes PTY output and marks the tab',
+    );
+    await application.evaluate(() => {
       global.testNotifications[0].emit('click');
-      Notification.prototype.show = global.originalNotificationShow;
     });
     await until(
       async () => (await page.locator('.needs-attention').count()) === 0,
       'notification click acknowledges the right terminal',
     );
+    await enableOrb(false);
+    await until(
+      () => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length === 1),
+      'disabling the orb destroys its window',
+    );
+    await command("sleep 1; printf '\\a'");
+    await application.evaluate(({ app }) => app.hide());
+    await until(
+      () => application.evaluate(() => global.testNotifications.length === 2),
+      'real BEL also notifies with the orb disabled',
+    );
+    assert.equal(
+      await application.evaluate(() => global.testSounds.length),
+      1,
+      'sound can be muted',
+    );
+    await application.evaluate(({ Notification }) => {
+      global.testNotifications[1].emit('click');
+      Notification.prototype.show = global.originalNotificationShow;
+      process.getBuiltinModule('child_process').execFile = global.originalExecFile;
+    });
     await enableOrb(true);
     console.log(
-      'PASS: optional desktop orb, real BEL, attention routing and duplicate suppression',
+      'PASS: dust motion, hidden-app BEL, sound mute, attention routing and duplicate suppression',
+    );
+
+    const claudeSettings = path.join(env.CLAUDE_CONFIG_DIR, 'settings.json');
+    const preservedSettings = {
+      preferredNotifChannel: 'notifications_disabled',
+      hooks: { Stop: [{ hooks: [{ type: 'command', command: 'true' }] }] },
+    };
+    await fs.mkdir(env.CLAUDE_CONFIG_DIR, { recursive: true });
+    await fs.writeFile(claudeSettings, JSON.stringify(preservedSettings));
+    await application.evaluate(({ dialog }) => {
+      global.originalIntegrationDialog = dialog.showMessageBox;
+      global.integrationDialogs = 0;
+      dialog.showMessageBox = async () => {
+        global.integrationDialogs++;
+        return { response: 0 };
+      };
+    });
+    try {
+      for (const enabled of [true, false]) {
+        await application.evaluate(async ({ Menu }, enabled) => {
+          const item = Menu.getApplicationMenu().getMenuItemById('claude-integration');
+          if (item.checked !== enabled) await item.click(item);
+        }, enabled);
+        await until(
+          () => application.evaluate(() => global.integrationDialogs > 0),
+          'Claude setup completes before reading its settings',
+        );
+        await application.evaluate(() => {
+          global.integrationDialogs = 0;
+        });
+        const settings = JSON.parse(await fs.readFile(claudeSettings, 'utf8'));
+        assert.equal(settings.preferredNotifChannel, 'notifications_disabled');
+        assert.deepEqual(settings.hooks.Stop[0], preservedSettings.hooks.Stop[0]);
+        if (enabled) assert.equal(settings.hooks.StopFailure.length, 1);
+        else assert.deepEqual(settings, preservedSettings);
+      }
+    } finally {
+      await application.evaluate(({ dialog }) => {
+        dialog.showMessageBox = global.originalIntegrationDialog;
+        delete global.originalIntegrationDialog;
+      });
+    }
+
+    // Claude emits terminalSequence from hook JSON; this fixture uses the same PTY path.
+    const hookRunner = path.join(profile, 'claude-events.cjs');
+    await fs.writeFile(
+      hookRunner,
+      String.raw`
+const { spawnSync } = require('node:child_process');
+const { events, cursorQuery } = JSON.parse(process.argv[2]);
+for (const event of events) {
+  const result = spawnSync('/bin/sh', [process.env.DWELL_CLAUDE_HOOK], {
+    input: JSON.stringify(event), encoding: 'utf8',
+  });
+  if (result.status !== 0) throw new Error('Hook failed: ' + result.stderr);
+  if (result.stdout.trim()) process.stdout.write(JSON.parse(result.stdout).terminalSequence);
+}
+const done = () => process.stdout.write('\r\nDWELL_HOOK_' + process.argv[3] + '\r\n');
+if (cursorQuery) {
+  process.stdin.setRawMode(true);
+  let reply = '';
+  const timeout = setTimeout(() => { throw new Error('No cursor-position reply'); }, 2000);
+  process.stdin.on('data', (data) => {
+    reply += data;
+    if (!/\x1b\[\d+;\d+R/.test(reply)) return;
+    clearTimeout(timeout);
+    process.stdin.setRawMode(false);
+    process.stdin.pause();
+    done();
+  });
+  process.stdout.write('\x1b[6n');
+} else done();
+`,
+    );
+    const claudeOrb = application.windows().find((window) => window.url().endsWith('/orb.html'));
+    await claudeOrb.waitForSelector('#orb');
+    const orbStatus = () => claudeOrb.locator('#orb').getAttribute('data-status');
+    let hookNumber = 0;
+    const emitHook = async (id, events, cursorQuery = false) => {
+      const number = ++hookNumber;
+      const argument = JSON.stringify({ events, cursorQuery }).replaceAll("'", "'\\''");
+      const text = `${quotePaths([process.execPath, hookRunner])}'${argument}' ${number}`;
+      await page.evaluate(({ id, text }) => window.dwell.input(id, text + '\r'), { id, text });
+      await until(() => hasOutput(id, `DWELL_HOOK_${number}`), 'hook output reaches the real PTY');
+    };
+    await emitHook(firstId, [{ hook_event_name: 'UserPromptSubmit' }]);
+    await until(async () => (await orbStatus()) === 'working', 'Claude reports working');
+    await page.evaluate((id) => window.dwell.active(id), firstId);
+    assert.equal(await orbStatus(), 'working', 'focus acknowledgement preserves working');
+    await emitHook(firstId, [{ hook_event_name: 'Stop' }], true);
+    await until(
+      async () => (await orbStatus()) === 'attention',
+      'foreground response needs attention',
+    );
+    assert.equal(await claudeOrb.locator('#orb-count').textContent(), '0');
+    assert.equal(await page.locator('.needs-attention').count(), 0);
+    await emitHook(firstId, [
+      { hook_event_name: 'StopFailure', error: 'rate_limit' },
+      { hook_event_name: 'Notification', notification_type: 'idle_prompt' },
+      { hook_event_name: 'PreToolUse', tool_name: 'Read', agent_id: 'subagent' },
+    ]);
+    await until(
+      async () => (await orbStatus()) === 'error',
+      'API error survives idle and subagent events',
+    );
+    assert.equal(await claudeOrb.locator('#orb-count').textContent(), '0');
+    await emitHook(firstId, [{ hook_event_name: 'PostToolUseFailure', error: 'recoverable' }]);
+    await until(async () => (await orbStatus()) === 'working', 'tool failure remains recoverable');
+    await command("printf '\\033]9;4;2;101\\a'; printf 'OSC_%s\\n' 'IGNORED'");
+    await until(() => hasOutput(firstId, 'OSC_IGNORED'), 'malformed OSC is processed');
+    assert.equal(await orbStatus(), 'working');
+    await activeInput().focus();
+    await page.keyboard.press('Control+c');
+    await until(async () => (await orbStatus()) === 'idle', 'Ctrl+C resets interrupted work');
+
+    await page.locator('#new-terminal').click();
+    await until(
+      async () => (await page.getByRole('tab').count()) === 2,
+      'second Claude terminal opens',
+    );
+    const claudeSecondId = await activeId();
+    await emitHook(claudeSecondId, [{ hook_event_name: 'UserPromptSubmit' }]);
+    await emitHook(firstId, [{ hook_event_name: 'PermissionRequest' }], true);
+    await until(
+      async () => (await page.locator('.needs-attention').count()) === 1,
+      'a terminal cursor query does not acknowledge a background request',
+    );
+    assert.equal(await orbStatus(), 'attention');
+    await emitHook(firstId, [{ hook_event_name: 'StopFailure', error: 'server_error' }]);
+    await until(
+      async () => (await orbStatus()) === 'error',
+      'error takes priority over another working terminal',
+    );
+    await claudeOrb.locator('#orb').click();
+    await until(async () => (await activeId()) === firstId, 'error click opens its own terminal');
+    await until(
+      async () => (await orbStatus()) === 'working',
+      'acknowledging error preserves other work',
+    );
+    await emitHook(firstId, [{ hook_event_name: 'SessionEnd' }]);
+    await page.locator(`#tab-${claudeSecondId}`).click();
+    await page.evaluate((id) => window.dwell.input(id, "printf '\\a'\r"), firstId);
+    await until(
+      async () => (await page.locator('.needs-attention').count()) === 1,
+      'generic BEL works after Claude ends',
+    );
+    await claudeOrb.locator('#orb').click();
+    await until(async () => (await activeId()) === firstId, 'generic BEL returns to its terminal');
+    await page.evaluate((id) => window.dwell.input(id, 'exit\r'), claudeSecondId);
+    await until(
+      async () => (await orbStatus()) === 'idle',
+      'shell exit removes stale working state',
+    );
+    await page.locator(`#tab-${claudeSecondId}`).locator('..').locator('.tab-close').click();
+    await until(
+      async () => (await page.getByRole('tab').count()) === 1,
+      'test terminal closes cleanly',
+    );
+    assert.equal(await activeId(), firstId);
+    console.log(
+      'PASS: Claude setup, hook lifecycle, OSC validation, cursor replies and independent sessions',
     );
 
     await page.locator('[data-path="README.md"]').click();
@@ -757,7 +991,7 @@ async function until(check, description, timeout = 12000) {
       'shell works while an interactive program is open in another tab',
     );
     await page.getByRole('tab', { name: 'Terminal 1', exact: true }).click();
-    await page.getByRole('tab', { name: 'Terminal 4', exact: true }).click();
+    await page.locator(`#tab-${commandsId}`).click();
     await command('sleep 0.3; exit');
     await page.getByRole('tab', { name: 'Terminal 1', exact: true }).click();
     await until(
@@ -765,10 +999,10 @@ async function until(check, description, timeout = 12000) {
       'background terminal exits independently',
     );
     assert(await page.locator('#restart-terminal').isHidden());
-    await page.getByRole('tab', { name: 'Terminal 4', exact: true }).click();
+    await page.locator(`#tab-${commandsId}`).click();
     await page.locator('#restart-terminal').click();
     await until(
-      async () => (await page.getByRole('tab', { name: 'Terminal 5', exact: true }).count()) === 1,
+      async () => (await page.getByRole('tab').count()) === 2 && (await activeId()) !== commandsId,
       'restart creates a fresh session',
     );
     const restartedId = await activeId();
@@ -863,6 +1097,13 @@ async function until(check, description, timeout = 12000) {
       ),
       orbPosition,
       'orb position survives relaunch',
+    );
+    assert.equal(
+      await application.evaluate(
+        ({ Menu }) => Menu.getApplicationMenu().getMenuItemById('notification-sound').checked,
+      ),
+      false,
+      'notification sound mute survives relaunch',
     );
     await application.evaluate(async ({ Menu }) => {
       const item = Menu.getApplicationMenu().getMenuItemById('desktop-orb');
