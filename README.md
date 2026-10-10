@@ -14,6 +14,11 @@
   <a href="https://github.com/mchl-schrdng/dwell-terminal/releases">What's new</a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/ci.yml"><img src="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/ci.yml/badge.svg?branch=main&amp;event=push" alt="CI"></a>
+  <a href="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/codeql.yml"><img src="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/codeql.yml/badge.svg?branch=main&amp;event=push" alt="CodeQL"></a>
+</p>
+
 <br>
 
 ![Dwell's graphite workspace on a warm copper desktop, with Git changes on the left, independent terminal tabs in the center, a code diff on the right, and the amber Eclipse companion beside the window.](docs/images/readme/desktop.png)
@@ -116,9 +121,4 @@ Built with Electron, xterm.js and plain JavaScript. [Contributing](CONTRIBUTING.
   <a href="SECURITY.md">Security</a>
   &nbsp; · &nbsp;
   <a href="docs/images/readme/README.md">Visual credits</a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/ci.yml"><img src="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/ci.yml/badge.svg?branch=main&amp;event=push" alt="CI"></a>
-  <a href="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/codeql.yml"><img src="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/codeql.yml/badge.svg?branch=main&amp;event=push" alt="CodeQL"></a>
 </p>
