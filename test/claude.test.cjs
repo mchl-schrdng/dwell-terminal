@@ -157,6 +157,34 @@ function runHook(input, overrides = {}) {
 }
 
 test(
+  'missing identity keeps the progress fallback with a nonce, even when extraction errors use stdout',
+  { skip: process.platform !== 'darwin' },
+  async (t) => {
+    const { directory } = await configuration(t);
+    const helper = await fs.readFile(path.join(__dirname, '../src/claude-hook.sh'), 'utf8');
+    const noisyHelper = path.join(directory, 'noisy-extraction.sh');
+    await fs.writeFile(
+      noisyHelper,
+      `noisy_plutil() {
+  /usr/bin/plutil "$@" || { printf 'Missing field diagnostic'; return 1; }
+}
+` + helper.replace('/usr/bin/plutil', 'noisy_plutil'),
+    );
+    const id = '11111111-1111-4111-8111-111111111111';
+    for (const extra of [{}, { DWELL_CLAUDE_HOOK: noisyHelper }])
+      for (const fields of [{}, { session_id: id }, { cwd: '/project' }])
+        assert.deepEqual(
+          runHook(
+            { hook_event_name: 'UserPromptSubmit', ...fields },
+            { DWELL_CLAUDE_NONCE: id, ...extra },
+          ),
+          { terminalSequence: '\x1b]9;4;3\x07' },
+          JSON.stringify(fields),
+        );
+  },
+);
+
+test(
   'the installed hook command ignores other terminals and malformed or oversized input',
   { skip: process.platform !== 'darwin' },
   () => {

@@ -43,6 +43,10 @@ async function readPreview(root, relative) {
   );
   try {
     const stat = await file.stat();
+    // O_NOFOLLOW protects the leaf, so recheck parent changes and the opened inode too.
+    const current = await fs.stat(await resolveFile(root, relative));
+    if (stat.dev !== current.dev || stat.ino !== current.ino)
+      throw new Error('This file changed while opening. Try again.');
     if (!stat.isFile())
       return {
         kind: 'unsupported',

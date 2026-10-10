@@ -38,6 +38,36 @@ test('path traversal and symlinks outside the project cannot be read', async () 
   await assert.rejects(readPreview(root, 'outside-link'), /outside/);
   await assert.rejects(resolveFile(root, '/etc/passwd'), /Invalid/);
 });
+test('preview rejects a parent replaced between resolution and opening', async (t) => {
+  for (const restore of [false, true])
+    await t.test(restore ? 'parent restored after opening' : 'parent remains a link', async (t) => {
+      const parent = path.join(root, `race-${restore}`);
+      const backup = parent + '-original';
+      const outside = path.join(directory, `race-outside-${restore}`);
+      await fs.mkdir(parent);
+      await fs.mkdir(outside);
+      await fs.writeFile(path.join(parent, 'note.txt'), 'Inside');
+      await fs.writeFile(path.join(outside, 'note.txt'), 'Outside');
+      const open = fs.open;
+      let opened;
+      t.mock.method(fs, 'open', async (filename, ...args) => {
+        if (filename !== path.join(parent, 'note.txt')) return open(filename, ...args);
+        await fs.rename(parent, backup);
+        await fs.symlink(outside, parent);
+        opened = await open(filename, ...args);
+        if (restore) {
+          await fs.unlink(parent);
+          await fs.rename(backup, parent);
+        }
+        return opened;
+      });
+      await assert.rejects(
+        readPreview(root, `race-${restore}/note.txt`),
+        restore ? /changed while opening/ : /outside the project/,
+      );
+      assert.equal(opened.fd, -1, 'the rejected file descriptor is closed');
+    });
+});
 test('UTF-8 and Markdown remain intact', async () => {
   const preview = await readPreview(root, 'notes.md');
   assert.equal(preview.kind, 'markdown');

@@ -54,6 +54,11 @@ async function until(check, label) {
     '#!/bin/sh\nexec claude --settings \'{"apiKeyHelper":"fixture-helper"}\' "$@"\n',
     { mode: 0o700 },
   );
+  await fs.writeFile(
+    path.join(profile, 'bin/delayed-maison'),
+    '#!/bin/sh\nif [ "$1" = --version ]; then\n  : > "$ZDOTDIR/launch-waiting"\n  while [ ! -f "$ZDOTDIR/launch-release" ]; do /bin/sleep 0.05; done\nelse\n  : > "$ZDOTDIR/launch-started"\nfi\nexec maison-fixture "$@"\n',
+    { mode: 0o700 },
+  );
   await fs.writeFile(path.join(profile, '.zshenv'), 'unsetopt GLOBAL_RCS\n');
   await fs.writeFile(
     path.join(profile, '.zshrc'),
@@ -92,8 +97,12 @@ async function until(check, label) {
     await page.waitForSelector('[role=tab]');
     await page.evaluate(() => {
       window.outputs = {};
+      window.attention = {};
       window.dwell.onData(({ id, data }) => {
         window.outputs[id] = (window.outputs[id] || '') + data;
+      });
+      window.dwell.onAttention((event) => {
+        window.attention[event.id] = event;
       });
     });
   }
@@ -106,11 +115,16 @@ async function until(check, label) {
   const output = (id, text) =>
     page.evaluate(({ id, text }) => window.outputs[id]?.includes(text), { id, text });
   async function menu(label) {
-    await application.evaluate(({ Menu }, label) => {
+    await application.evaluate(({ Menu, BrowserWindow }, label) => {
       const item = Menu.getApplicationMenu()
         .items.flatMap((group) => group.submenu?.items || [])
         .find((item) => item.label === label);
-      item.click(item);
+      item.click(
+        item,
+        BrowserWindow.getAllWindows().find(
+          (window) => window.webContents.getURL() === 'dwell://app/index.html',
+        ),
+      );
     }, label);
   }
   async function command(text) {
@@ -135,11 +149,87 @@ async function until(check, label) {
     await page.waitForFunction(() =>
       document.querySelector('.xterm-rows')?.textContent.includes('DWELL_READY>'),
     );
+    assert(await page.locator('#tree-pane').isHidden());
+    assert(await page.locator('#preview-pane').isHidden());
+    await page.locator('#toggle-tree').click();
+    const canceledId = randomUUID();
+    const originalWorktrees = git('worktree', 'list', '--porcelain', '-z');
+    await page.evaluate(
+      async ({ id, parent }) => {
+        await window.dwell.launcher({ command: 'delayed-maison', args: [] });
+        await window.dwell.createTerminal(id, 'Canceled launch', parent);
+        window.canceledStart = window.dwell.start(id, 80, 24, 'worktree', 'Canceled').then(
+          () => ({ started: true }),
+          (error) => ({ error: error.message }),
+        );
+      },
+      { id: canceledId, parent: original },
+    );
+    await until(
+      () =>
+        fs.stat(path.join(profile, 'launch-waiting')).then(
+          () => true,
+          () => false,
+        ),
+      'launcher verification is pending',
+    );
+    assert(await page.evaluate((id) => window.dwell.closeTerminal(id), canceledId));
+    await fs.writeFile(path.join(profile, 'launch-release'), '');
+    const canceled = await page.evaluate(() => window.canceledStart);
+    assert(canceled.error?.includes('closed before'), 'a closed tab cannot finish launching');
+    await assert.rejects(fs.stat(path.join(profile, 'launch-started')), { code: 'ENOENT' });
+    assert.equal(git('worktree', 'list', '--porcelain', '-z'), originalWorktrees);
+    assert.equal(await page.getByRole('tab').count(), 1);
+    await page.evaluate(() => window.dwell.launcher({ command: 'maison-fixture', args: [] }));
+    console.log('PASS: closing a pending launch starts no PTY and creates no worktree');
     const a = await createTask('Auth', original);
     const b = await createTask('Auth', original);
     assert.notEqual(a.checkoutRoot, b.checkoutRoot);
     assert.notEqual(a.branch, b.branch);
     assert.notEqual(a.conversationId, b.conversationId);
+    const projectAlias = path.join(temporary, 'project-alias');
+    await fs.symlink(project, projectAlias);
+    await application.evaluate(({ dialog }, folder) => {
+      global.originalWorkspaceOpenDialog = dialog.showOpenDialog;
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
+    }, projectAlias);
+    try {
+      await page.evaluate(() => window.dwell.chooseFolder());
+      assert.equal(
+        application.windows().filter((window) => window.url().endsWith('/index.html')).length,
+        1,
+        'reopening the same canonical project reuses its window',
+      );
+      assert.equal(await page.getByRole('tab').count(), 3);
+      assert.equal((await context(a.id)).conversationId, a.conversationId);
+      await application.evaluate(({ dialog }, folder) => {
+        dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
+      }, a.checkoutRoot);
+      await page.evaluate(() => window.dwell.chooseFolder());
+      const nested = application
+        .windows()
+        .find((window) => window !== page && window.url().endsWith('/index.html'));
+      assert(nested, 'a distinct worktree root can still open its own window');
+      await nested.waitForSelector('[role=tab]');
+      assert.equal(
+        await nested.evaluate(async () => (await window.dwell.project()).root),
+        a.checkoutRoot,
+      );
+      await nested.waitForFunction(() =>
+        document.querySelector('.xterm-rows')?.textContent.includes('DWELL_READY>'),
+      );
+      const nestedWindow = await application.browserWindow(nested);
+      await nestedWindow.evaluate((window) => window.destroy());
+      await page.bringToFront();
+    } finally {
+      await application.evaluate(({ dialog }) => {
+        dialog.showOpenDialog = global.originalWorkspaceOpenDialog;
+        delete global.originalWorkspaceOpenDialog;
+      });
+    }
+    console.log(
+      'PASS: one window per canonical project preserves tabs; distinct worktrees remain independent',
+    );
     assert.equal(before, git('diff', '--cached') + git('diff'));
     assert.equal(
       await fs.readFile(path.join(a.checkoutRoot, 'src/App.tsx'), 'utf8'),
@@ -315,6 +405,8 @@ async function until(check, label) {
       { id: a.id, revision: (await context(a.id)).revision, epoch: scope.revision },
     );
     assert.equal(oldReference.relative, 'src/App.tsx', 'old output keeps its original cwd');
+    await page.locator('#toggle-focus').click();
+    assert(await page.locator('#preview-pane').isHidden());
     await menu('Open File Reference…');
     await page
       .locator('#reference-value')
@@ -328,6 +420,8 @@ async function until(check, label) {
           .then((text) => text.includes('second')),
       'quoted Unicode reference',
     );
+    assert.equal(await page.locator('#toggle-focus').getAttribute('aria-pressed'), 'false');
+    assert(await page.locator('#preview-pane').isVisible(), 'an explicit file opens outside Focus');
     console.log(
       'PASS: references open source from diffs, keep old cwd and reject cross-checkout paths',
     );
@@ -388,7 +482,47 @@ async function until(check, label) {
     await orb.screenshot({ path: path.join(root, 'test-results/eclipse-card.png') });
     await orb.locator('#orb-card').click();
     await until(async () => (await activeId()) === a.id, 'card returns to its terminal');
+    await until(
+      () => page.evaluate((id) => window.attention[id]?.pending === false, a.id),
+      'viewing a request clears its unread marker',
+    );
+    assert.equal(await page.locator('#session-status').textContent(), 'Plan to review');
+    assert.equal(
+      await page
+        .locator('#tab-' + a.id)
+        .locator('..')
+        .getAttribute('data-status'),
+      'attention',
+      'acknowledging a request preserves its state and reason',
+    );
     console.log('PASS: Eclipse reason refinement and accessible click-to-return card');
+
+    await page.locator('#tab-' + helper).click();
+    await page.evaluate(
+      ({ a, b }) => {
+        window.dwell.input(a, 'EVENT UserPromptSubmit\rPLAN\r');
+        window.dwell.input(b, 'EVENT StopFailure\r');
+      },
+      { a: a.id, b: b.id },
+    );
+    await until(
+      () =>
+        page.evaluate(({ a, b }) => window.attention[a]?.pending && window.attention[b]?.pending, {
+          a: a.id,
+          b: b.id,
+        }),
+      'two background Claude sessions need attention',
+    );
+    await menu('Next Session Needing Attention');
+    await until(async () => (await activeId()) === b.id, 'the error has priority over a request');
+    assert.equal(await page.locator('#session-status').textContent(), 'Response interrupted');
+    assert.equal(await page.locator('#session-status').getAttribute('data-status'), 'error');
+    await page.locator('#next-attention').click();
+    await until(async () => (await activeId()) === a.id, 'the remaining request stays reachable');
+    assert.equal(await page.locator('#session-status').textContent(), 'Plan to review');
+    console.log(
+      'PASS: attention navigation prioritizes errors and preserves the acknowledged reason',
+    );
 
     await command('QUIT');
     await until(
@@ -400,6 +534,48 @@ async function until(check, label) {
       'Claude exits',
     );
     assert.equal((await context(a.id)).cwd, null);
+    await page.locator('#tab-' + helper).click();
+    await page.evaluate((id) => {
+      window.outputs[id] = '';
+    }, helper);
+    await command('maison-fixture --resume ' + a.conversationId);
+    await until(
+      async () => (await context(helper)).cwd === a.checkoutRoot,
+      'the conversation is running in a manual Claude shell',
+    );
+    await page.keyboard.press('ArrowUp');
+    await until(async () => (await context(helper)).cwd === null, 'cursor input invalidates cwd');
+    await page.keyboard.press('Control+u');
+    await page.locator('#tab-' + a.id).click();
+    await page.evaluate((id) => {
+      window.outputs[id] = '';
+    }, a.id);
+    await page.getByRole('button', { name: 'Resume Claude', exact: true }).click();
+    await until(
+      async () => (await activeId()) === helper,
+      'resume focuses Claude after cursor input',
+    );
+    assert(!(await output(a.id, 'FIXTURE_READY')), 'unknown cwd is not proof that Claude exited');
+    await page.evaluate((id) => {
+      window.outputs[id] = '';
+    }, helper);
+    const beforeEnd = (await context(helper)).revision;
+    await command('QUIT');
+    await until(
+      () => output(helper, 'DWELL_READY>'),
+      'SessionEnd returns the manual launcher to its shell',
+    );
+    await until(async () => (await context(helper)).revision > beforeEnd, 'SessionEnd is observed');
+    await page.locator('#tab-' + a.id).click();
+    await page.getByRole('button', { name: 'Resume Claude', exact: true }).click();
+    await until(
+      () => output(a.id, 'FIXTURE_READY:' + a.conversationId),
+      'resume ignores another shell whose Claude conversation already ended',
+    );
+    assert.equal(await activeId(), a.id);
+    console.log('PASS: cursor input cannot duplicate Claude; confirmed SessionEnd permits resume');
+    await command('QUIT');
+    await page.getByRole('button', { name: 'Resume Claude', exact: true }).waitFor();
     await page.locator('#tab-' + b.id).click();
     await command('QUIT');
     await until(
@@ -478,10 +654,24 @@ async function until(check, label) {
           .then((text) => text.includes('Session ended')),
       'resume ends',
     );
+    for (const selector of ['#toggle-tree', '#toggle-preview']) {
+      if ((await page.locator(selector).getAttribute('aria-pressed')) === 'true')
+        await page.locator(selector).click();
+    }
+    await until(
+      () =>
+        page.evaluate(async () => {
+          const { settings } = await window.dwell.project();
+          return settings.showTree === false && settings.showPreview === false;
+        }),
+      'hidden panel choices are saved',
+    );
     await application.evaluate(({ app }) => app.exit(0));
     application = null;
     await fs.rm(b.checkoutRoot, { recursive: true });
     await launch();
+    assert(await page.locator('#tree-pane').isHidden(), 'saved false remains false after relaunch');
+    assert(await page.locator('#preview-pane').isHidden());
     await page.locator('#tab-' + b.id).click();
     await until(
       () => page.getByRole('button', { name: 'Resume Claude', exact: true }).isDisabled(),
@@ -492,6 +682,29 @@ async function until(check, label) {
     await command('pwd');
     await until(() => output(b.id, project), 'explicit terminal recovery');
     assert.equal((await context(b.id)).conversationId, null);
+    await command('maison-fixture');
+    await until(
+      async () => (await context(b.id)).conversationId,
+      'Claude starts in a recovered shell',
+    );
+    await command('CWD src');
+    await until(
+      async () => (await context(b.id)).cwd?.endsWith('/src'),
+      'recovered shell receives Claude cwd',
+    );
+    await page.evaluate((id) => {
+      window.outputs[id] = '';
+    }, b.id);
+    await page.keyboard.press('Control+c');
+    await until(
+      () => output(b.id, 'DWELL_READY>'),
+      'interrupted Claude returns to the recovered shell',
+    );
+    assert.equal(
+      (await context(b.id)).cwd,
+      null,
+      'recovered shells clear stale Claude context too',
+    );
     assert.deepEqual(errors, []);
     console.log('PASS: deleted worktree blocks resume and offers explicit plain-terminal recovery');
     await fs.mkdir(path.join(root, 'test-results'), { recursive: true });

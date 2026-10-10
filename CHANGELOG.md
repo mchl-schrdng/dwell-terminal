@@ -1,12 +1,21 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (unreleased)
 
+- Give the terminal a compact shared title and tab bar, with panels closed for new projects and a temporary Focus Mode that preserves saved layouts.
+- Find sessions by name or checkout, show Claude’s current reason in the selected session, and jump to unread alerts with errors first.
+- Add saved terminal text zoom, consistent reading margins, and Escape from the preview back to the terminal.
 - Start native Claude worktrees from the selected checkout’s committed HEAD, with terminal-scoped Files, Changes, previews and drop references.
 - Restore tabs without starting commands, and explicitly resume each saved Claude conversation in its original checkout using the same configured launcher.
 - Open validated file:line[:column] references in the source preview with ⌘click or the keyboard reference dialog.
 - Show Eclipse’s current project, checkout and reason on hover or focus, preserving its animation and sound.
 - Require Claude Code 2.1.296+ for workspaces; preserve launcher account settings and block unavailable checkouts and changed launchers from silent resume.
+
+- Cancel closed tabs before spawning Claude, keep one window per project, and resume conversations after a manual Claude session exits.
+- Keep session choices stable during background updates and prevent delayed file references from marking a different preview.
+- Route Eclipse to unread requests at equal priority, ignore expired targets and refresh its current session name.
+- Recheck preview file identity before reading; package only runtime sources and refuse to overwrite a running bundle.
+- Preserve Claude progress notifications without identity when macOS reports a missing JSON field on standard output.
 
 ## 0.3.0
 

@@ -1,7 +1,7 @@
 {
   "name": "dwell-terminal",
   "productName": "Dwell",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A quiet terminal workspace with a file tree and live previews.",
   "private": true,
   "license": "MIT",

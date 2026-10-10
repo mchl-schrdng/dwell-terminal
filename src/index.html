@@ -19,7 +19,45 @@
         <i data-lucide="folder"></i><span id="project-name">Dwell</span
         ><i data-lucide="chevron-down" class="small"></i>
       </button>
+      <div class="terminal-heading" hidden>
+        <div id="terminal-tabs" role="tablist" aria-label="Terminal sessions"></div>
+        <button id="restart-terminal" class="text-button" hidden>New Session</button>
+        <button
+          id="new-terminal"
+          class="icon-button"
+          aria-label="New terminal"
+          title="New Terminal · ⌘T"
+        >
+          <i data-lucide="plus"></i>
+        </button>
+        <button
+          id="new-terminal-menu"
+          class="icon-button"
+          aria-label="More terminal actions"
+          aria-haspopup="menu"
+          title="More terminal actions"
+        >
+          <i data-lucide="chevron-down"></i>
+        </button>
+      </div>
       <div class="title-actions">
+        <button
+          id="switch-session"
+          class="icon-button"
+          aria-label="Switch Session"
+          title="Switch Session · ⌘K"
+        >
+          <i data-lucide="panels-top-left"></i>
+        </button>
+        <button
+          id="toggle-focus"
+          class="icon-button"
+          aria-label="Toggle Focus Mode"
+          title="Toggle Focus Mode · ⌘⇧F"
+          aria-pressed="false"
+        >
+          <i data-lucide="scan"></i>
+        </button>
         <button
           id="toggle-tree"
           class="icon-button"
@@ -85,25 +123,19 @@
         tabindex="0"
       ></div>
       <section id="terminal-pane" class="pane" aria-label="Terminal">
-        <div class="pane-heading terminal-heading">
-          <div id="terminal-tabs" role="tablist" aria-label="Terminal sessions"></div>
-          <button id="restart-terminal" class="text-button" hidden>New Session</button>
-          <button
-            id="new-terminal"
-            class="icon-button"
-            aria-label="New terminal"
-            title="New Terminal · ⌘T"
-          >
-            <i data-lucide="plus"></i>
+        <div id="session-context">
+          <span id="checkout-status"></span>
+          <span id="session-status" role="status" aria-live="polite"></span>
+          <button id="scroll-bottom" class="text-button" hidden>
+            <i data-lucide="arrow-down"></i>Latest output
           </button>
           <button
-            id="new-terminal-menu"
-            class="icon-button"
-            aria-label="More terminal actions"
-            aria-haspopup="menu"
-            title="More terminal actions"
+            id="review-changes"
+            class="text-button"
+            aria-label="Changes"
+            title="Review Changes"
           >
-            <i data-lucide="chevron-down"></i>
+            <i data-lucide="git-pull-request"></i>Changes
           </button>
         </div>
         <div id="terminal">
@@ -113,9 +145,6 @@
             <button id="empty-new-terminal" class="text-button">New Terminal</button>
           </div>
         </div>
-        <button id="scroll-bottom" class="text-button floating" hidden>
-          <i data-lucide="arrow-down"></i>Latest output
-        </button>
       </section>
       <div
         id="preview-divider"
@@ -171,10 +200,34 @@
       </aside>
     </main>
     <footer id="statusbar">
-      <span id="project-path">Dwell</span><span id="checkout-status"></span
+      <span id="project-path">Dwell</span
       ><span id="status-message" role="status" aria-live="polite"></span
       ><span id="file-status"></span>
+      <button id="next-attention" aria-label="Next session needing attention" hidden>
+        Next session needing attention
+      </button>
     </footer>
+    <dialog id="session-dialog" aria-labelledby="session-dialog-title">
+      <div class="session-dialog-heading">
+        <h2 id="session-dialog-title">Switch Session</h2>
+        <button
+          id="close-session-dialog"
+          class="icon-button"
+          aria-label="Close session switcher"
+          title="Close · Esc"
+        >
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <input
+        id="session-search"
+        aria-label="Find a session"
+        placeholder="Find a session…"
+        autocomplete="off"
+      />
+      <div id="session-list"></div>
+      <p id="session-empty" hidden>No matching sessions</p>
+    </dialog>
     <dialog id="worktree-dialog" aria-labelledby="worktree-title">
       <form id="worktree-form">
         <h2 id="worktree-title">New Claude Worktree</h2>

@@ -7,7 +7,8 @@ input=$(/usr/bin/head -c 1048577)
 [ "${#input}" -le 1048576 ] || exit 0
 
 field() {
-  printf '%s' "$input" | /usr/bin/plutil -extract "$1" raw -o - - 2>/dev/null
+  extracted=$(printf '%s' "$input" | /usr/bin/plutil -extract "$1" raw -o - - 2>/dev/null) || return 1
+  printf '%s' "$extracted"
 }
 
 # Subagent tool activity must not overwrite the main conversation's state.
