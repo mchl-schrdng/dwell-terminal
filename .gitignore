@@ -1,0 +1,15 @@
+node_modules/
+.npm-cache/
+.electron-cache/
+.rebuild-cache/
+.swift-cache/
+dist/
+release/
+test-results/
+.DS_Store
+assets/Dwell.iconset/
+assets/icon.png
+.env
+.env.*
+!.env.example
+*.log

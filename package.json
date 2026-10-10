@@ -1,0 +1,51 @@
+{
+  "name": "dwell-terminal",
+  "productName": "Dwell",
+  "version": "0.1.0",
+  "description": "A quiet terminal workspace with a file tree and live previews.",
+  "private": true,
+  "license": "MIT",
+  "author": "mchl-schrdng",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mchl-schrdng/dwell-terminal.git"
+  },
+  "homepage": "https://github.com/mchl-schrdng/dwell-terminal#readme",
+  "bugs": "https://github.com/mchl-schrdng/dwell-terminal/issues",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "src/main.cjs",
+  "scripts": {
+    "build": "node scripts/build.cjs",
+    "start": "npm run build && electron .",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run lint && npm run format:check && npm test && npm run build",
+    "test": "node --test test/*.test.cjs",
+    "test:app": "node scripts/test-app.cjs",
+    "icons": "node scripts/icon.cjs",
+    "package": "npm run build && node scripts/package.cjs"
+  },
+  "dependencies": {
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "@eslint/js": "10.0.1",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/xterm": "^6.0.0",
+    "dompurify": "^3.4.16",
+    "electron": "^44.7.0",
+    "esbuild": "^0.28.2",
+    "eslint": "10.12.0",
+    "globals": "17.13.0",
+    "highlight.js": "^11.12.0",
+    "lucide": "^1.54.0",
+    "marked": "^18.1.0",
+    "playwright": "^1.64.0",
+    "prettier": "3.9.9"
+  }
+}

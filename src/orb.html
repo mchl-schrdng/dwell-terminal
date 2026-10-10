@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Dwell Desktop Orb</title>
+    <link rel="stylesheet" href="orb.css" />
+    <script defer src="orb.js"></script>
+  </head>
+  <body>
+    <button
+      id="orb"
+      aria-label="Open Dwell"
+      title="Open Dwell · Drag to move · Right-click to hide"
+    >
+      <canvas id="orb-dust" width="88" height="88" aria-hidden="true"></canvas>
+      <span id="orb-core" aria-hidden="true"></span>
+      <span id="orb-count" hidden aria-hidden="true"></span>
+    </button>
+  </body>
+</html>

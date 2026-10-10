@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Dwell</title>
+    <link rel="stylesheet" href="renderer.css" />
+    <link rel="stylesheet" href="style.css" />
+    <script defer src="renderer.js"></script>
+  </head>
+  <body>
+    <header id="titlebar">
+      <img class="brand-mark" src="dwell-mark.svg" alt="Dwell" draggable="false" />
+      <button id="project-button" class="project-button" title="Open Folder · ⌘O">
+        <i data-lucide="folder"></i><span id="project-name">Dwell</span
+        ><i data-lucide="chevron-down" class="small"></i>
+      </button>
+      <div class="title-actions">
+        <button
+          id="toggle-tree"
+          class="icon-button"
+          aria-label="Toggle file tree"
+          title="Toggle File Tree · ⌘B"
+          aria-pressed="true"
+        >
+          <i data-lucide="panel-left"></i>
+        </button>
+        <button
+          id="toggle-preview"
+          class="icon-button"
+          aria-label="Toggle preview"
+          title="Toggle Preview · ⌘⇧P"
+          aria-pressed="true"
+        >
+          <i data-lucide="panel-right"></i>
+        </button>
+      </div>
+    </header>
+    <main id="welcome">
+      <img class="welcome-mark" src="dwell-mark.svg" alt="" draggable="false" />
+      <h1>Dwell</h1>
+      <p>A little room to focus.</p>
+      <button id="open-folder" class="text-button primary">Open Folder… <kbd>⌘O</kbd></button>
+    </main>
+    <main id="workspace" hidden>
+      <section id="tree-pane" class="pane" aria-label="File explorer">
+        <div class="pane-heading">
+          <div class="file-modes" aria-label="Explorer view">
+            <button id="show-files" aria-pressed="true">Files</button>
+            <button id="show-changes" aria-pressed="false">Changes</button>
+          </div>
+          <button
+            id="refresh-changes"
+            class="icon-button"
+            title="Refresh changes"
+            aria-label="Refresh changes"
+            hidden
+          >
+            ↻
+          </button>
+          <button
+            id="toggle-hidden"
+            class="icon-button"
+            title="Show Hidden Files · ⌘⇧."
+            aria-label="Show hidden files"
+            aria-pressed="false"
+          >
+            <i data-lucide="eye-off"></i>
+          </button>
+        </div>
+        <div id="tree" role="tree" aria-label="Project files"></div>
+      </section>
+      <div
+        id="tree-divider"
+        class="divider"
+        role="separator"
+        aria-label="File tree width"
+        aria-orientation="vertical"
+        aria-valuemin="180"
+        aria-valuemax="550"
+        tabindex="0"
+      ></div>
+      <section id="terminal-pane" class="pane" aria-label="Terminal">
+        <div class="pane-heading terminal-heading">
+          <div id="terminal-tabs" role="tablist" aria-label="Terminal sessions"></div>
+          <button id="restart-terminal" class="text-button" hidden>New Session</button>
+          <button
+            id="new-terminal"
+            class="icon-button"
+            aria-label="New terminal"
+            title="New Terminal · ⌘T"
+          >
+            <i data-lucide="plus"></i>
+          </button>
+        </div>
+        <div id="terminal">
+          <div id="terminal-empty" class="empty-state" hidden>
+            <i data-lucide="terminal"></i>
+            <p>No terminals open.</p>
+            <button id="empty-new-terminal" class="text-button">New Terminal</button>
+          </div>
+        </div>
+        <button id="scroll-bottom" class="text-button floating" hidden>
+          <i data-lucide="arrow-down"></i>Latest output
+        </button>
+      </section>
+      <div
+        id="preview-divider"
+        class="divider"
+        role="separator"
+        aria-label="Preview width"
+        aria-orientation="vertical"
+        aria-valuemin="300"
+        aria-valuemax="900"
+        tabindex="0"
+      ></div>
+      <aside id="preview-pane" class="pane" aria-label="File preview">
+        <div class="pane-heading">
+          <span class="heading-label preview-title"
+            ><i data-lucide="file-text"></i><span id="preview-name">Preview</span></span
+          >
+          <div class="preview-actions">
+            <button
+              id="toggle-source"
+              class="icon-button"
+              title="View Markdown source"
+              aria-label="View Markdown source"
+              hidden
+            >
+              <i data-lucide="code-2"></i></button
+            ><button
+              id="toggle-wrap"
+              class="icon-button"
+              title="Toggle line wrapping"
+              aria-label="Toggle line wrapping"
+              aria-pressed="true"
+              hidden
+            >
+              <i data-lucide="wrap-text"></i></button
+            ><button
+              id="close-preview"
+              class="icon-button"
+              aria-label="Close preview"
+              title="Close Preview"
+            >
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+        </div>
+        <div id="preview-path"></div>
+        <div id="preview-content" tabindex="0">
+          <div class="empty-state">
+            <i data-lucide="file-search"></i>
+            <p>Select a file to preview it.</p>
+          </div>
+        </div>
+        <div id="preview-note" hidden></div>
+      </aside>
+    </main>
+    <footer id="statusbar">
+      <span id="project-path">Dwell</span
+      ><span id="status-message" role="status" aria-live="polite"></span
+      ><span id="file-status"></span>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,86 @@
+:root {
+  color-scheme: dark;
+  background: transparent;
+}
+* {
+  box-sizing: border-box;
+}
+[hidden] {
+  display: none !important;
+}
+body {
+  margin: 0;
+  width: 88px;
+  height: 88px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  user-select: none;
+}
+#orb {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #e8e9ed;
+  display: grid;
+  place-items: center;
+  position: relative;
+  cursor: grab;
+}
+#orb:focus-visible {
+  outline: 1px solid #e8e9ed;
+  outline-offset: -5px;
+}
+#orb:active {
+  cursor: grabbing;
+}
+#orb-dust {
+  position: absolute;
+  width: 88px;
+  height: 88px;
+  left: -6px;
+  top: -6px;
+  pointer-events: none;
+}
+#orb-core {
+  display: none;
+  font:
+    500 24px/1 -apple-system,
+    sans-serif;
+  color: #e1cea9;
+}
+#orb-count {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  padding: 0 4px;
+  background: #d0bd98;
+  color: #17191e;
+  font:
+    600 10px/18px -apple-system,
+    sans-serif;
+}
+@media (prefers-reduced-transparency: reduce) {
+  #orb {
+    background: #1a1c22;
+  }
+}
+@media (forced-colors: active) {
+  #orb {
+    border: 1px solid ButtonText;
+    background: ButtonFace;
+  }
+  #orb-dust {
+    display: none;
+  }
+  #orb-core {
+    display: block;
+    color: ButtonText;
+  }
+}
