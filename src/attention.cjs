@@ -25,8 +25,12 @@ function createAttention(windows, preferences, savePreferences) {
   function first() {
     const priority = { idle: 0, working: 1, attention: 2, error: 3 };
     let selected;
-    for (const item of items.values())
-      if (priority[status(item)] > (selected ? priority[status(selected)] : 0)) selected = item;
+    for (const item of items.values()) {
+      const level = priority[status(item)];
+      const current = selected ? priority[status(selected)] : 0;
+      if (level > current || (level && level === current && item.pending && !selected.pending))
+        selected = item;
+    }
     return selected;
   }
 
@@ -34,17 +38,15 @@ function createAttention(windows, preferences, savePreferences) {
     if (!orb || orb.isDestroyed()) return;
     const item = first();
     const session = item?.state.sessions.get(item.id);
+    const label = session?.label || item?.label;
     orb.webContents.send('orb:state', {
       count: [...items.values()].filter((entry) => entry.pending).length,
       status: item ? status(item) : 'idle',
-      label: item ? `${path.basename(item.state.root)} · ${item.label}` : 'Dwell',
+      label: item ? `${path.basename(item.state.root)} · ${label}` : 'Dwell',
       target: item ? `${item.state.window.webContents.id}:${item.id}` : null,
       project: item ? path.basename(item.state.root) : 'Dwell',
       checkout: item
-        ? [
-            session?.branch || (session?.checkoutRoot && path.basename(session.checkoutRoot)),
-            item.label,
-          ]
+        ? [session?.branch || (session?.checkoutRoot && path.basename(session.checkoutRoot)), label]
             .filter(Boolean)
             .join(' · ')
         : '',
@@ -57,14 +59,23 @@ function createAttention(windows, preferences, savePreferences) {
     item.notification?.close();
     item.notification = null;
     item.pending = false;
+  }
+
+  function report(item, currentStatus = item.status) {
     if (!item.state.window.isDestroyed())
-      item.state.window.webContents.send('terminal:attention', { id: item.id, pending: false });
+      item.state.window.webContents.send('terminal:attention', {
+        id: item.id,
+        pending: item.pending,
+        status: currentStatus,
+        reason: currentStatus === 'idle' ? '' : reasons[item.reason] || 'Needs attention',
+      });
   }
 
   function clear(state, id) {
     for (const [key, item] of items) {
       if (item.state !== state || (id && item.id !== id)) continue;
       dismiss(item);
+      report(item, 'idle');
       items.delete(key);
     }
     update();
@@ -76,6 +87,7 @@ function createAttention(windows, preferences, savePreferences) {
     if (!item) return;
     dismiss(item);
     item.acknowledged = true;
+    report(item, item.typed ? item.status : 'idle');
     if (!item.typed) items.delete(key);
     update();
   }
@@ -113,11 +125,7 @@ function createAttention(windows, preferences, savePreferences) {
         previous.reason = reason;
         previous.acknowledged = false;
         previous.pending = !(focused && state.activeSession === id);
-        state.window.webContents.send('terminal:attention', {
-          id,
-          pending: previous.pending,
-          status: nextStatus,
-        });
+        report(previous);
         update();
       }
       return;
@@ -135,11 +143,7 @@ function createAttention(windows, preferences, savePreferences) {
       label: typeof label === 'string' ? label.slice(0, 80) : 'Terminal',
     };
     items.set(key, item);
-    state.window.webContents.send('terminal:attention', {
-      id,
-      pending: item.pending,
-      status: nextStatus,
-    });
+    report(item);
     update();
     if (!item.pending) return;
     if (preferences.notificationSound !== false && Date.now() - lastSound > 1500) {
@@ -292,6 +296,7 @@ function createAttention(windows, preferences, savePreferences) {
       }
       return;
     }
+    update();
     if (cardAnchor || drag || !first()) return;
     const [x, y] = orb.getPosition();
     cardAnchor = { x, y };
@@ -314,6 +319,7 @@ function createAttention(windows, preferences, savePreferences) {
   ipcMain.on('orb:open', (event, target) => {
     if (validOrb(event)) {
       const item = typeof target === 'string' ? items.get(target) : first();
+      if (typeof target === 'string' && !item) return;
       showCard(false);
       open(item);
     }

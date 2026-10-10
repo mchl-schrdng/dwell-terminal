@@ -2,6 +2,8 @@
 
 Dwell is a small terminal workspace for macOS on Apple Silicon. It uses your existing shell and command-line tools.
 
+This guide describes the **0.4.0 source preview**. The latest published download is **0.3.0**; Focus, worktrees, saved conversation resume, file references and the Eclipse reason card arrive in 0.4.0.
+
 ## Install
 
 [Download the latest release](https://github.com/mchl-schrdng/dwell-terminal/releases/latest), unzip it, and move **Dwell.app** to Applications. Open Dwell and choose **Open Folder**.
@@ -12,24 +14,34 @@ The release is not Apple-notarized. If macOS blocks the app, use **System Settin
 
 Each terminal tab has its own shell session. Double-click a tab to rename it, or press F2 while the tab is focused. Enter saves the name; Escape cancels.
 
-Tab names, their order and your project layout are restored on relaunch. Running shell sessions are not restored. Switching tabs or resizing the workspace keeps sessions alive.
+Tab names, their order and your project layout are restored on relaunch. Running shell sessions are not restored. Switching tabs or resizing the workspace keeps sessions alive. Opening the same project again returns to its existing window.
 
-In the source preview, restored tabs wait for **Open Terminal** or **Resume Claude**; reopening Dwell does not run commands.
+Restored tabs wait for **Open Terminal** or **Resume Claude**; reopening Dwell does not run commands.
 
 Code, Markdown and image previews update as files change on disk. Previews are read-only; large files are bounded.
 
-| Shortcut  | Action                   |
-| --------- | ------------------------ |
-| ⌘T / ⌘W   | Open / close a terminal  |
-| ⌘O        | Open a folder            |
-| ⌘B / ⌘⇧P  | Toggle files / preview   |
-| ⌘J        | Focus the terminal       |
-| ⌘⇧[ / ⌘⇧] | Previous / next terminal |
-| ⌘⇧L       | Open a file reference    |
+A new project opens with the terminal filling the workspace. Open Files or Preview when needed; existing saved layouts are kept. **Focus Mode** temporarily hides both panels and restores them when toggled again. Opening a panel or file leaves Focus Mode. **Changes** beside the session context opens the Git view directly.
 
-## Claude workspaces (source preview)
+**Switch Session** searches tab names, branches and checkout paths without starting a process. The context row and tab markers distinguish Claude working, waiting for input, and an interrupted response. **Next Session Needing Attention** takes you to an unread alert, with errors first. Reading it clears the unread marker while its reason remains visible until Claude’s next state.
 
-These features are unreleased. Workspaces require **Claude Code 2.1.296 or later**, the version verified with this implementation. Older clients retain ordinary terminals and compatible progress notifications; Dwell never updates Claude automatically.
+Terminal text size is saved per project, from 11 to 24 px. Resizing or zooming keeps each session alive. Press Escape while the preview has focus to close it and return to the terminal; Escape in the terminal still belongs to the running program. **Latest output** returns from scrollback without covering the terminal’s text.
+
+| Shortcut     | Action                                         |
+| ------------ | ---------------------------------------------- |
+| ⌘T / ⌘W      | Open / close a terminal                        |
+| ⌘O           | Open a folder                                  |
+| ⌘B / ⌘⇧P     | Toggle files / preview                         |
+| ⌘J           | Focus the terminal                             |
+| ⌘⇧[ / ⌘⇧]    | Previous / next terminal                       |
+| ⌘⇧L          | Open a file reference                          |
+| ⌘⇧F          | Toggle Focus Mode                              |
+| ⌘K           | Switch Session                                 |
+| ⌘⌥A          | Next unread alert                              |
+| ⌘+ / ⌘− / ⌘0 | Increase / decrease / reset terminal text size |
+
+## Claude workspaces
+
+Workspaces require **Claude Code 2.1.296 or later**, the version verified with this implementation. Older clients retain ordinary terminals and compatible progress notifications; Dwell never updates Claude automatically.
 
 Enable **Help → Claude Code Integration**. If you normally launch Claude through an executable such as `maison`, select it in **Terminal → Claude Launcher…**, with its usual fixed arguments as a JSON array. Dwell uses a fresh login shell that loads your shell configuration, then executes that launcher directly. The default is `claude`. Aliases and functions need an executable wrapper. Do not put credentials in launcher arguments.
 
@@ -85,7 +97,7 @@ Enable **View → Desktop Orb** to show Eclipse, the optional desktop companion.
 
 Click Eclipse to return to the most urgent terminal, drag it to move, or right-click to hide. It remembers its position, respects reduced motion and has a static fallback without WebGL.
 
-In the source preview, hover or focus Eclipse to see the current project, checkout/tab and reason: **Approval requested**, **Question**, **Plan to review**, **Response ready**, **Response interrupted**, or **Needs attention**. The card opens that same session. It contains no conversation text or tool inputs; refining a reason does not play another chime.
+Hover or focus Eclipse to see the current project, checkout/tab and reason: **Approval requested**, **Question**, **Plan to review**, **Response ready**, **Response interrupted**, or **Needs attention**. The card opens that same session. It contains no conversation text or tool inputs; refining a reason does not play another chime.
 
 Reading an alert clears its unread marker; further work or a new prompt updates its state. Background alerts play an original spatial chime. Toggle **View → Notification Sound** to mute or enable it. Foreground alerts remain silent.
 

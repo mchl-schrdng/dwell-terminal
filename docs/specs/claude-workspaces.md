@@ -205,7 +205,7 @@ This specification does not require immediate installation or publication. Deliv
 
 ## 11. Implementation notes
 
-Validation on 2026-10-10 (Apple Silicon): `npm run format`, `npm run check` (37 unit tests), `npm run test:app`, `npm run package`, and the full `test:app` suite with `DWELL_EXECUTABLE` pointing to the packaged macOS executable all passed. The packaged Eclipse card and restored-tab screen were visually inspected. Generated builds, profiles and screenshots remain outside version control.
+Initial workspace validation on 2026-10-10 (Apple Silicon): `npm run format`, `npm run check` (37 unit tests), `npm run test:app`, `npm run package`, and the full `test:app` suite with `DWELL_EXECUTABLE` pointing to the packaged macOS executable all passed. The packaged Eclipse card and restored-tab screen were visually inspected. Generated builds, profiles and screenshots remain outside version control.
 
 - The new launch actions require Claude Code **2.1.296+**, the version verified with the user's existing `maison` executable. Ordinary terminals and the compatible notification fallback retain their existing support.
 - `src/workspaces.cjs` validates Git membership and migrates saved tab metadata. Main-process context revisions scope file/Git requests, watchers and file references; the renderer retains navigation per checkout.
@@ -215,4 +215,4 @@ Validation on 2026-10-10 (Apple Silicon): `npm run format`, `npm run check` (37 
 
 Known limits: relative references are deliberately disabled in fullscreen output or after cursor edits/reflow make their original directory uncertain. Use an absolute reference or **Open File Reference…**. Modified-click behavior in fullscreen is covered by the deterministic desktop fixture; a physical ⌘click on real Claude output and multiple physical displays have not been manually checked. Shell aliases/functions are not supported launchers; an executable wrapper that forwards arguments and invokes `claude` on PATH is supported.
 
-The release version remains 0.3.0 with an Unreleased changelog entry. The generated package is a local validation build, not a published 0.3.0 replacement. Installation and publication remain separate actions.
+The implementation is included in the 0.4.0 source preview, alongside Focus and the subsequent repository cleanup. The initial checks above predate those changes. Installation and tagged release publication remain separate actions.

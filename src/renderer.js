@@ -19,6 +19,7 @@ let saveTimer;
 let activeSession;
 let terminalCounter = 0;
 let changesBusy = false;
+let focusMode = false;
 const sessions = new Map();
 const navigation = new Map();
 let visibleRoot;
@@ -55,8 +56,8 @@ function save() {
 function layout() {
   if (!settings) return;
   const width = window.innerWidth;
-  const showPreview = settings.showPreview;
-  const showTree = settings.showTree && !(showPreview && width < 960);
+  const showPreview = settings.showPreview && !focusMode;
+  const showTree = settings.showTree && !focusMode && !(showPreview && width < 960);
   const treeWidth = Math.min(
     settings.treeWidth,
     550,
@@ -75,6 +76,7 @@ function layout() {
   workspace.classList.toggle('no-preview', !showPreview);
   $('#toggle-tree').setAttribute('aria-pressed', String(showTree));
   $('#toggle-preview').setAttribute('aria-pressed', String(showPreview));
+  $('#toggle-focus').setAttribute('aria-pressed', String(focusMode));
   $('#file-status').hidden = !showPreview;
   $('#tree-divider').setAttribute('aria-valuenow', String(Math.round(treeWidth)));
   $('#preview-divider').setAttribute('aria-valuenow', String(Math.round(previewWidth)));
@@ -84,17 +86,34 @@ function layout() {
   $('#toggle-hidden').hidden = changes;
   $('#refresh-changes').hidden = !changes;
   $('#tree').setAttribute('aria-label', changes ? 'Changed files' : 'Project files');
-  requestAnimationFrame(() => activeSession?.fit.fit());
+  requestAnimationFrame(fitActiveTerminal);
 }
 
 function togglePane(which) {
   const key = which === 'tree' ? 'showTree' : 'showPreview';
-  settings[key] = !settings[key];
+  settings[key] = focusMode || !settings[key];
+  focusMode = false;
   if (which === 'tree' && settings.showTree && window.innerWidth < 960)
     settings.showPreview = false;
   layout();
   save();
   activeSession?.terminal.focus();
+}
+
+function fitActiveTerminal() {
+  if (!activeSession) return;
+  if (activeSession.terminal.options.fontSize !== settings.terminalFontSize)
+    activeSession.terminal.options.fontSize = settings.terminalFontSize;
+  activeSession.fit.fit();
+}
+
+function zoomTerminal(delta) {
+  settings.terminalFontSize = Math.max(
+    11,
+    Math.min(24, delta === 0 ? 14 : settings.terminalFontSize + delta),
+  );
+  fitActiveTerminal();
+  save();
 }
 
 function watch() {
@@ -314,6 +333,7 @@ async function selectFile(relative) {
     $('#preview-content').scrollTop = 0;
   }
   settings.showPreview = true;
+  focusMode = false;
   layout();
   $('#tree')
     .querySelectorAll('.tree-row')
@@ -418,6 +438,112 @@ function updateTerminalControls() {
     !activeSession || activeSession.starting || activeSession.running || activeSession.restored;
   $('#scroll-bottom').hidden =
     !terminal || terminal.buffer.active.viewportY >= terminal.buffer.active.baseY;
+  const state = sessionState(activeSession);
+  const reason = activeSession ? state.reason : '';
+  if ($('#session-status').textContent !== reason) $('#session-status').textContent = reason;
+  $('#session-status').dataset.status = state.status;
+  const pending = nextAttention();
+  $('#next-attention').hidden = !pending;
+  if (pending) {
+    $('#next-attention').textContent = `${pending.label} · ${pending.attention.reason}`;
+    $('#next-attention').dataset.status = pending.attention.status;
+    $('#next-attention').title = 'Next session needing attention · ⌘⌥A';
+  }
+}
+
+function sessionState(session) {
+  if (session?.attention?.status && session.attention.status !== 'idle') return session.attention;
+  return {
+    status: session?.error ? 'error' : 'idle',
+    reason: session?.error
+      ? 'Could not start session'
+      : session?.starting
+        ? 'Starting…'
+        : session?.exited
+          ? 'Session ended'
+          : session?.restored
+            ? 'Saved session'
+            : 'Terminal',
+  };
+}
+
+function updateSession(session) {
+  const state = sessionState(session);
+  session.tabItem.dataset.status = state.status;
+  session.tabItem.classList.toggle('needs-attention', session.attention?.pending === true);
+  session.tab.setAttribute(
+    'aria-description',
+    `${session.attention?.pending ? 'Unread · ' : ''}${state.reason}`,
+  );
+  session.tab.title = [
+    session.label,
+    session.context?.branch,
+    state.reason,
+    'Double-click to rename',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  updateTerminalControls();
+  if ($('#session-dialog').open) renderSessions();
+}
+
+function nextAttention() {
+  const pending = [...sessions.values()].filter((session) => session.attention?.pending);
+  return pending.find((session) => session.attention.status === 'error') || pending[0];
+}
+
+function renderSessions() {
+  const search = $('#session-search').value.trim().toLowerCase();
+  const focused = document.activeElement?.dataset.session;
+  const list = $('#session-list');
+  const existing = new Map([...list.children].map((button) => [button.dataset.session, button]));
+  const rows = [...sessions.values()].flatMap((session) => {
+    const context = session.context;
+    const detail = context?.branch || (context?.checkoutRoot || project.root).split('/').pop();
+    if (![session.label, detail, context?.checkoutRoot].join(' ').toLowerCase().includes(search))
+      return [];
+    const state = sessionState(session);
+    let button = existing.get(session.id);
+    if (!button) {
+      button = node('button', 'session-choice');
+      button.type = 'button';
+      button.dataset.session = session.id;
+      button.append(
+        node('span', 'session-choice-name'),
+        node('span', 'session-choice-detail'),
+        node('span', 'session-choice-status'),
+      );
+      button.addEventListener('click', () => {
+        $('#session-dialog').close();
+        activateSession(session);
+      });
+    }
+    button.dataset.status = state.status;
+    button.classList.toggle('current', session === activeSession);
+    if (session === activeSession) button.setAttribute('aria-current', 'true');
+    else button.removeAttribute('aria-current');
+    button.children[0].textContent = session.label;
+    button.children[1].textContent = detail;
+    button.children[2].textContent = state.reason;
+    button.title = context?.checkoutRoot || project.root;
+    return [button];
+  });
+  if (
+    rows.length !== list.children.length ||
+    rows.some((row, index) => row !== list.children[index])
+  )
+    list.replaceChildren(...rows);
+  $('#session-empty').hidden = rows.length > 0;
+  if (focused && document.activeElement?.dataset.session !== focused)
+    (rows.find((row) => row.dataset.session === focused) || $('#session-search')).focus();
+}
+
+function showSessions() {
+  if ($('#session-dialog').open) return;
+  $('#session-search').value = '';
+  renderSessions();
+  $('#session-dialog').showModal();
+  $('#session-search').focus();
 }
 
 function showContext(session) {
@@ -457,12 +583,16 @@ function showContext(session) {
     ? '~' + root.slice(project.home.length)
     : root;
   $('#project-path').title = root;
+  $('#checkout-status').title = root;
   $('#checkout-status').textContent =
     context?.status === 'starting'
       ? 'Starting worktree…'
       : context?.status === 'unavailable'
         ? 'Checkout unavailable'
-        : [context?.branch, context?.shared ? 'Shared Claude checkout' : '']
+        : [
+            context?.branch || root.split('/').pop(),
+            context?.shared ? 'Shared Claude checkout' : '',
+          ]
             .filter(Boolean)
             .join(' · ');
   layout();
@@ -486,13 +616,17 @@ function acceptContext(context) {
   if (!session || session.context?.revision > context.revision) return;
   const changed =
     session.context?.revision !== context.revision || session.context?.shared !== context.shared;
+  const restoreChanged =
+    session.context?.status !== context.status ||
+    session.context?.conversationId !== context.conversationId;
   session.context = context;
   if (!context.cwd && session.linkEpochs) {
     for (const epoch of session.linkEpochs) epoch.marker.dispose();
     session.linkEpochs = [];
   }
   if (changed && session === activeSession) showContext(session);
-  if (session.restored) showRestore(session);
+  if (session.restored && !session.starting && restoreChanged) showRestore(session);
+  updateSession(session);
 }
 
 function activateSession(session, focus = true) {
@@ -514,7 +648,7 @@ function activateSession(session, focus = true) {
     api.context(session.id).then(acceptContext).catch(report);
   } else if (changed) showContext(null);
   requestAnimationFrame(() => {
-    if (session && activeSession === session) session.fit.fit();
+    if (session && activeSession === session) fitActiveTerminal();
   });
 }
 
@@ -535,7 +669,7 @@ function renameTerminal(session) {
     if (commit && label) {
       session.label = label;
       session.tab.querySelector('span').textContent = label;
-      session.tab.title = `${label} · Double-click to rename`;
+      updateSession(session);
       session.closeButton.title = `Close ${label}`;
       session.closeButton.setAttribute('aria-label', `Close ${label}`);
       save();
@@ -591,8 +725,8 @@ async function createTerminal(savedLabel, options = {}) {
   $('#terminal').append(pane);
   const term = new Terminal({
     fontFamily: '"SF Mono", SFMono-Regular, Menlo, monospace',
-    fontSize: 14,
-    lineHeight: 1.18,
+    fontSize: settings.terminalFontSize,
+    lineHeight: 1.24,
     cursorBlink: false,
     cursorStyle: 'bar',
     scrollback: 10000,
@@ -640,6 +774,7 @@ async function createTerminal(savedLabel, options = {}) {
     restored: Boolean(options.saved),
   };
   sessions.set(id, session);
+  updateSession(session);
   term.loadAddon(fit);
   term.loadAddon(new WebLinksAddon((_event, url) => api.openLink(url).catch(report)));
   term.open(pane);
@@ -747,11 +882,13 @@ function showRestore(session) {
 }
 
 async function startSession(session, mode, task) {
-  const { terminal: term, id, tab } = session;
+  const { terminal: term, id } = session;
   if (session.starting) return;
   session.starting = true;
   session.error = null;
   session.exited = false;
+  session.attention = null;
+  updateSession(session);
   session.pane.querySelectorAll('.restore-session button').forEach((button) => {
     button.disabled = true;
   });
@@ -764,7 +901,6 @@ async function startSession(session, mode, task) {
       session.running = !session.exited;
       session.tabItem.classList.remove('ended');
       if (result.context) acceptContext(result.context);
-      tab.title = `${session.label} · ${result?.shell || 'shell'} · Double-click to rename`;
       // A pane may have been resized while its shell was starting.
       if (session.running) api.resize(id, term.cols, term.rows);
     })
@@ -776,7 +912,7 @@ async function startSession(session, mode, task) {
     .finally(() => {
       session.starting = false;
       if (session.restored) showRestore(session);
-      if (activeSession === session) updateTerminalControls();
+      updateSession(session);
     });
   await session.ready;
   save();
@@ -887,8 +1023,16 @@ async function openReference(session, reference, epoch) {
   markdownSource = true;
   lastPreview = null;
   selected = result.relative;
-  await selectFile(result.relative);
-  if (session !== activeSession || session.context.revision !== context.revision) return;
+  const loading = selectFile(result.relative);
+  const version = previewVersion;
+  await loading;
+  if (
+    session !== activeSession ||
+    session.context.revision !== context.revision ||
+    selected !== result.relative ||
+    previewVersion !== version
+  )
+    return;
   const line = $('#preview-content').querySelectorAll('.source-line')[result.line - 1];
   if (!line) {
     $('#preview-note').hidden = false;
@@ -949,16 +1093,11 @@ api.onData(({ id, data }) => {
   const session = sessions.get(id);
   if (session) session.terminal.write(data, () => api.ack(id, data.length));
 });
-api.onAttention(({ id, pending, status }) => {
+api.onAttention(({ id, pending, status, reason }) => {
   const session = sessions.get(id);
   if (!session) return;
-  session.tabItem.classList.toggle('needs-attention', pending);
-  if (pending)
-    session.tab.setAttribute(
-      'aria-description',
-      status === 'error' ? 'Response interrupted' : 'Terminal needs attention',
-    );
-  else session.tab.removeAttribute('aria-description');
+  session.attention = { pending, status, reason };
+  updateSession(session);
 });
 api.onFocusTerminal((id) => {
   const session = sessions.get(id);
@@ -974,19 +1113,17 @@ api.onExit(({ id, exitCode }) => {
   if (!session) return;
   session.running = false;
   session.exited = true;
+  session.attention = null;
   session.tabItem.classList.add('ended');
-  session.tab.title = `Session ended (${exitCode})`;
   session.terminal.writeln(`\r\n\x1b[90mSession ended (${exitCode}).\x1b[0m`);
   if (session.context.conversationId) {
     session.restored = true;
     showRestore(session);
   }
   api.context(id).then(acceptContext).catch(report);
-  if (activeSession === session) updateTerminalControls();
+  updateSession(session);
 });
-new ResizeObserver(() => requestAnimationFrame(() => activeSession?.fit.fit())).observe(
-  $('#terminal'),
-);
+new ResizeObserver(() => requestAnimationFrame(fitActiveTerminal)).observe($('#terminal'));
 $('#terminal-tabs').addEventListener('keydown', (event) => {
   if (!event.target.matches('[role="tab"]')) return;
   if (event.key === 'ArrowRight') cycleTerminal(1, false);
@@ -1004,6 +1141,7 @@ async function openProject(value) {
   $('#project-button').title = value.root ? `${value.root} · Open Folder (⌘O)` : 'Open Folder · ⌘O';
   if (!value.root) return;
   $('#welcome').hidden = true;
+  $('.terminal-heading').hidden = false;
   workspace.hidden = false;
   $('#project-path').textContent = value.root.startsWith(value.home + '/')
     ? '~' + value.root.slice(value.home.length)
@@ -1013,12 +1151,16 @@ async function openProject(value) {
     treeMode: 'files',
     treeWidth: window.innerWidth * 0.19,
     previewWidth: window.innerWidth * 0.32,
-    showTree: true,
-    showPreview: window.innerWidth >= 1120,
+    showTree: false,
+    showPreview: false,
+    terminalFontSize: 14,
     hidden: false,
     wrap: true,
     ...value.settings,
   };
+  settings.terminalFontSize = Number.isFinite(settings.terminalFontSize)
+    ? Math.max(11, Math.min(24, settings.terminalFontSize))
+    : 14;
   expanded = new Set(settings.expanded || []);
   selected = settings.selected || null;
   $('#toggle-hidden').setAttribute('aria-pressed', String(settings.hidden));
@@ -1047,7 +1189,8 @@ async function action(name) {
   if (name === 'copy') {
     const text = nameInput
       ? nameInput.value.slice(nameInput.selectionStart, nameInput.selectionEnd)
-      : window.getSelection()?.toString() || activeSession?.terminal.getSelection();
+      : window.getSelection()?.toString() ||
+        (!document.querySelector('dialog[open]') && activeSession?.terminal.getSelection());
     if (text) await api.copy(text);
     return;
   }
@@ -1066,18 +1209,34 @@ async function action(name) {
           nameInput.selectionEnd,
           'end',
         );
+        nameInput.dispatchEvent(new Event('input', { bubbles: true }));
       }
       return;
     }
+    if (document.querySelector('dialog[open]')) return;
     const target = activeSession;
     if (target) {
       target.terminal.focus();
       const text = await api.paste();
-      if (sessions.has(target.id)) target.terminal.paste(text);
+      if (sessions.has(target.id) && !document.querySelector('dialog[open]'))
+        target.terminal.paste(text);
     }
     return;
   }
-  if (!settings) return;
+  if (!settings || document.querySelector('dialog[open]')) return;
+  if (name === 'focus') {
+    focusMode = !focusMode;
+    layout();
+    activeSession?.terminal.focus();
+  }
+  if (name === 'switch-session') showSessions();
+  if (name === 'next-attention') {
+    const session = nextAttention();
+    if (session) activateSession(session);
+  }
+  if (name === 'zoom-in') zoomTerminal(1);
+  if (name === 'zoom-out') zoomTerminal(-1);
+  if (name === 'zoom-reset') zoomTerminal(0);
   if (name === 'tree' || name === 'preview') togglePane(name);
   if (name === 'terminal') activeSession?.terminal.focus();
   if (name === 'new-terminal') await createTerminal();
@@ -1115,6 +1274,20 @@ function showLauncherDialog() {
 }
 for (const button of document.querySelectorAll('[data-close-dialog]'))
   button.addEventListener('click', () => button.closest('dialog').close());
+$('#session-search').addEventListener('input', renderSessions);
+$('#close-session-dialog').addEventListener('click', () => $('#session-dialog').close());
+$('#session-dialog').addEventListener('close', () => activeSession?.terminal.focus());
+$('#session-dialog').addEventListener('keydown', (event) => {
+  const rows = [...$('#session-list').children];
+  const index = rows.indexOf(document.activeElement);
+  if (event.key === 'Enter' && event.target === $('#session-search')) rows[0]?.click();
+  else if (event.key === 'ArrowDown') rows[Math.min(rows.length - 1, index + 1)]?.focus();
+  else if (event.key === 'ArrowUp') {
+    if (index <= 0) $('#session-search').focus();
+    else rows[index - 1].focus();
+  } else return;
+  event.preventDefault();
+});
 $('#worktree-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const parent = sessions.get(worktreeSource.id);
@@ -1169,6 +1342,22 @@ $('#open-folder').addEventListener('click', () => api.chooseFolder().catch(repor
 $('#toggle-tree').addEventListener('click', () => action('tree'));
 $('#toggle-preview').addEventListener('click', () => action('preview'));
 $('#close-preview').addEventListener('click', () => action('preview'));
+$('#toggle-focus').addEventListener('click', () => action('focus'));
+$('#switch-session').addEventListener('click', () => action('switch-session'));
+$('#next-attention').addEventListener('click', () => action('next-attention'));
+$('#preview-pane').addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  event.preventDefault();
+  event.stopPropagation();
+  togglePane('preview');
+});
+$('#review-changes').addEventListener('click', () => {
+  if (!settings) return;
+  focusMode = false;
+  settings.showTree = true;
+  if (window.innerWidth < 960) settings.showPreview = false;
+  $('#show-changes').click();
+});
 $('#toggle-hidden').addEventListener('click', () => action('hidden'));
 for (const mode of ['files', 'changes']) {
   $(`#show-${mode}`).addEventListener('click', async () => {

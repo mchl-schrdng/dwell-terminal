@@ -92,7 +92,7 @@ async function chooseFolder(parent) {
   if (result.canceled) return;
   const root = await fsp.realpath(result.filePaths[0]);
   const current = parent && windows.get(parent.webContents.id);
-  if (current && !current.root) {
+  if (current && !current.root && ![...windows.values()].some((state) => state.root === root)) {
     current.root = root;
     preferences.lastRoot = root;
     savePreferences();
@@ -130,6 +130,12 @@ async function createWindow(root) {
       if (!(await fsp.stat(root)).isDirectory()) root = null;
     } catch {
       root = null;
+    }
+    const existing = root && [...windows.values()].find((state) => state.root === root);
+    if (existing) {
+      existing.window.show();
+      existing.window.focus();
+      return existing.window;
     }
   }
   const window = new BrowserWindow({
@@ -444,8 +450,11 @@ handle('settings:save', (state, value) => {
   const settings = {
     treeWidth: Math.max(180, Math.min(550, Number(value.treeWidth) || 260)),
     previewWidth: Math.max(300, Math.min(900, Number(value.previewWidth) || 450)),
-    showTree: value.showTree !== false,
-    showPreview: value.showPreview !== false,
+    showTree: value.showTree === true,
+    showPreview: value.showPreview === true,
+    terminalFontSize: Number.isFinite(value.terminalFontSize)
+      ? Math.max(11, Math.min(24, value.terminalFontSize))
+      : 14,
     hidden: value.hidden === true,
     wrap: value.wrap !== false,
     treeMode: value.treeMode === 'changes' ? 'changes' : 'files',
@@ -495,6 +504,8 @@ handle('terminal:create', async (state, id, label, parentId) => {
   };
   state.sessions.set(id, session);
   const info = await checkout(root).catch(() => null);
+  if (state.window.isDestroyed() || state.sessions.get(id) !== session)
+    throw new Error('The terminal was closed before it finished starting.');
   session.branch = info?.branch;
   persistTabs(state);
   return publicContext(state, session);
@@ -579,9 +590,13 @@ handle('terminal:start', async (state, id, cols, rows, mode = 'shell', task) => 
   if (mode === 'resume') {
     for (const owner of windows.values())
       for (const other of owner.sessions.values()) {
+        // Cursor input invalidates shell metadata; only SessionEnd proves Claude has exited.
         if (
           other !== session &&
-          (other.process || other.launching) &&
+          (other.launching ||
+            (other.process &&
+              (other.expectedConversation ||
+                !other.closedConversations.has(other.conversationId)))) &&
           other.conversationId === session.conversationId
         ) {
           owner.window.show();
@@ -591,6 +606,10 @@ handle('terminal:start', async (state, id, cols, rows, mode = 'shell', task) => 
         }
       }
   }
+  const ensureOpen = () => {
+    if (state.window.isDestroyed() || state.sessions.get(id) !== session)
+      throw new Error('The terminal was closed before it finished starting.');
+  };
   session.launching = true;
   try {
     const env = terminalEnvironment();
@@ -600,6 +619,7 @@ handle('terminal:start', async (state, id, cols, rows, mode = 'shell', task) => 
       mode === 'recover'
         ? state.root
         : await contextRoot(state, { id, revision: session.revision });
+    ensureOpen();
     if (mode === 'worktree') {
       session.status = 'starting';
       session.unconfirmed = true;
@@ -608,14 +628,19 @@ handle('terminal:start', async (state, id, cols, rows, mode = 'shell', task) => 
     if (mode === 'worktree' || mode === 'resume') {
       const definition = launcher(preferences.claudeLauncher);
       env.DWELL_CLAUDE_BINARY = await checkLauncher(loginShell, definition, env, cwd);
-      if (!(await isClaudeIntegrationEnabled(claudeConfig)))
+      ensureOpen();
+      const integrated = await isClaudeIntegrationEnabled(claudeConfig);
+      ensureOpen();
+      if (!integrated)
         throw new Error(
           'Enable Help → Claude Code Integration before starting a Claude workspace.',
         );
       await setClaudeIntegration(claudeConfig, true, true);
+      ensureOpen();
       session.launcher = launcherKey(definition);
       if (mode === 'worktree') {
         session.worktree = await newWorktree(state.root, cwd, task, reservedWorktrees);
+        ensureOpen();
         env.DWELL_LAUNCH_BIN = path.join(
           app.isPackaged ? process.resourcesPath : __dirname,
           'claude-bin',
@@ -629,6 +654,7 @@ handle('terminal:start', async (state, id, cols, rows, mode = 'shell', task) => 
         session.status = 'starting';
       } else {
         await observeDirectory(state.root, cwd);
+        ensureOpen();
         command = launchCommand(loginShell, definition, ['--resume', session.conversationId]);
       }
     } else {
@@ -638,14 +664,16 @@ handle('terminal:start', async (state, id, cols, rows, mode = 'shell', task) => 
       session.conversationId = null;
       session.launcher = null;
       session.status = 'ready';
+      session.contextError = null;
     }
     session.cwd = null;
-    session.kind = mode;
+    session.kind = mode === 'recover' ? 'shell' : mode;
     session.expectedConversation = mode === 'resume' ? session.conversationId : null;
     session.nonce = randomUUID();
     session.closedConversations.clear();
     session.claudeLive = false;
     env.DWELL_CLAUDE_NONCE = session.nonce;
+    ensureOpen();
     const processHandle = pty.spawn(command.file, command.args, {
       name: 'xterm-256color',
       cols,
@@ -690,8 +718,10 @@ handle('terminal:start', async (state, id, cols, rows, mode = 'shell', task) => 
   } catch (error) {
     if (mode === 'worktree') {
       if (session.worktree) reservedWorktrees.delete(session.worktree.name);
-      session.status = 'unavailable';
-      contextChanged(state, session);
+      if (!state.window.isDestroyed() && state.sessions.get(id) === session) {
+        session.status = 'unavailable';
+        contextChanged(state, session);
+      }
     }
     throw error;
   } finally {
@@ -969,10 +999,41 @@ app.whenReady().then(async () => {
       {
         label: 'View',
         submenu: [
+          { label: 'Toggle Focus Mode', accelerator: 'CmdOrCtrl+Shift+F', click: action('focus') },
           { label: 'Toggle File Tree', accelerator: 'CmdOrCtrl+B', click: action('tree') },
           { label: 'Toggle Preview', accelerator: 'CmdOrCtrl+Shift+P', click: action('preview') },
           { label: 'Show Hidden Files', accelerator: 'CmdOrCtrl+Shift+.', click: action('hidden') },
           { label: 'Focus Terminal', accelerator: 'CmdOrCtrl+J', click: action('terminal') },
+          { type: 'separator' },
+          { label: 'Switch Session', accelerator: 'CmdOrCtrl+K', click: action('switch-session') },
+          {
+            label: 'Next Session Needing Attention',
+            accelerator: 'CmdOrCtrl+Alt+A',
+            click: action('next-attention'),
+          },
+          { type: 'separator' },
+          {
+            label: 'Increase Terminal Text Size',
+            accelerator: 'CmdOrCtrl+Plus',
+            click: action('zoom-in'),
+          },
+          {
+            label: 'Increase Terminal Text Size (=)',
+            visible: false,
+            accelerator: 'CmdOrCtrl+=',
+            click: action('zoom-in'),
+          },
+          {
+            label: 'Decrease Terminal Text Size',
+            accelerator: 'CmdOrCtrl+-',
+            click: action('zoom-out'),
+          },
+          {
+            label: 'Reset Terminal Text Size',
+            accelerator: 'CmdOrCtrl+0',
+            click: action('zoom-reset'),
+          },
+          { type: 'separator' },
           {
             id: 'desktop-orb',
             label: 'Desktop Orb',

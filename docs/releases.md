@@ -13,11 +13,12 @@ git config --local user.name mchl-schrdng
 git config --local user.email 73759636+mchl-schrdng@users.noreply.github.com
 ```
 
-Merge the version change and changelog into `main` after Quality, macOS and CodeQL pass. Create an annotated tag whose version matches the package. The initial release uses:
+Merge the version change and changelog into `main` after Quality, macOS and CodeQL pass. Create an annotated tag whose version matches the package:
 
 ```sh
-git tag -a v0.1.0 -m "Dwell 0.1.0"
-git push origin v0.1.0
+version=$(node -p "require('./package.json').version")
+git tag -a "v${version}" -m "Dwell ${version}"
+git push origin "v${version}"
 ```
 
 The Release checks workflow verifies the version and actor, repeats CI, tests the packaged macOS app and uploads `Dwell-macos-arm64`. It does not publish using a bot account.
@@ -36,4 +37,4 @@ gh release create "v${version}" release/publish/*.zip release/publish/*.sha256 \
 
 Write concise release notes in `release/notes.md`, including the Apple Silicon requirement and the lack of Apple notarization. Do not move a published tag; fix problems in a new version.
 
-Build locally with `npm run package`. Output is in `release/v<version>/`, with the ZIP and checksum in `release/`. Never replace a bundle that is currently running. Signing and notarization are not configured.
+Build locally with `npm run package`. Output is in `release/v<version>/`, with the ZIP and checksum in `release/`. Packaging refuses to replace that bundle while it is running; other versions can stay open. Signing and notarization are not configured.

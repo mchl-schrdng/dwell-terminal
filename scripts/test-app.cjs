@@ -76,10 +76,21 @@ async function until(check, description, timeout = 12000) {
       timeout: 30000,
     });
     page = await application.firstWindow();
+    if (executablePath) {
+      assert.throws(
+        () =>
+          execFileSync(process.execPath, [path.join(root, 'scripts/package.cjs')], {
+            encoding: 'utf8',
+            stdio: 'pipe',
+          }),
+        (error) => String(error.stderr).includes('Close this build of Dwell before rebuilding it'),
+        'packaging must not replace the running test bundle',
+      );
+      console.log('PASS: packaging refuses to replace a running bundle');
+    }
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.waitForSelector('.xterm-helper-textarea');
-    await page.waitForSelector('[data-path="src"]');
     await application.evaluate(({ app, BrowserWindow }) => {
       app.focus({ steal: true });
       BrowserWindow.getAllWindows()
@@ -91,6 +102,8 @@ async function until(check, description, timeout = 12000) {
         document.hasFocus() &&
         document.querySelector('.xterm-rows')?.textContent.includes('DWELL_TEST_READY>'),
     );
+    assert(await page.locator('#tree-pane').isHidden(), 'a new project starts without panels');
+    assert(await page.locator('#preview-pane').isHidden());
     await page.evaluate(() => {
       window.testOutput = '';
       window.testOutputs = {};
@@ -172,6 +185,16 @@ async function until(check, description, timeout = 12000) {
         accelerator,
       );
     };
+    const savedSettings = () => page.evaluate(async () => (await window.dwell.project()).settings);
+    await application.evaluate(({ ipcMain }) => {
+      global.testInputs = [];
+      global.testResizes = [];
+      global.recordTestInput = (_event, id, data) => global.testInputs.push({ id, data });
+      global.recordTestResize = (_event, id, cols, rows) =>
+        global.testResizes.push({ id, cols, rows });
+      ipcMain.on('terminal:input', global.recordTestInput);
+      ipcMain.on('terminal:resize', global.recordTestResize);
+    });
     const pasteUrl = 'https://github.com/mchl-schrdng/dwell-terminal';
     await application.evaluate(async ({ clipboard, ClipboardItem }) => {
       global.savedClipboard = await Promise.all(
@@ -231,6 +254,20 @@ async function until(check, description, timeout = 12000) {
         'menu paste targets the tab name editor',
       );
       await page.getByRole('textbox', { name: 'Terminal name' }).press('Escape');
+      await page.locator('#switch-session').click();
+      await page.locator('#session-list .session-choice').first().focus();
+      await application.evaluate(() => {
+        global.testInputs = [];
+      });
+      await menuAction('Paste', 'CmdOrCtrl+V');
+      await delay(100);
+      assert(await page.locator('#session-dialog').isVisible());
+      assert.deepEqual(
+        await application.evaluate(() => global.testInputs),
+        [],
+        'menu paste on a modal session choice cannot reach the underlying PTY',
+      );
+      await page.keyboard.press('Escape');
     } finally {
       await application.evaluate(async ({ clipboard }, text) => {
         if ((await clipboard.readText()) === text) {
@@ -242,12 +279,39 @@ async function until(check, description, timeout = 12000) {
     }
     console.log('PASS: menu and keyboard paste deliver a URL');
     const firstId = await activeId();
-    await command("export DWELL_TEST_VALUE=first; cd src; printf 'FIRST_%s\\n' 'READY'");
+    await page.locator('#toggle-tree').click();
+    await page.waitForSelector('[data-path="src"]');
+    await page.locator('#toggle-preview').click();
     await until(
-      () => hasOutput(firstId, 'FIRST_READY'),
+      async () => (await savedSettings()).showTree && (await savedSettings()).showPreview,
+      'explicit panel choices are saved',
+    );
+    await command(
+      "export DWELL_TEST_VALUE=first; cd src; printf 'FIRST_%s\\nFIRST_PID_%s\\n' 'READY' \"$$\"",
+    );
+    await until(
+      () => page.evaluate((id) => /FIRST_PID_\d+/.test(window.testOutputs[id] || ''), firstId),
       'first shell changes its environment and directory',
     );
+    const firstPid = await page.evaluate(
+      (id) => window.testOutputs[id].match(/FIRST_PID_(\d+)/)[1],
+      firstId,
+    );
     await page.keyboard.type("printf 'DRAFT_%s\\n' 'KEPT'");
+    await application.evaluate(() => {
+      global.testInputs = [];
+    });
+    await menuAction('Toggle Focus Mode', 'CmdOrCtrl+Shift+F');
+    assert(await page.locator('#tree-pane').isHidden());
+    assert(await page.locator('#preview-pane').isHidden());
+    assert.equal(await page.locator('#toggle-focus').getAttribute('aria-pressed'), 'true');
+    assert.equal((await savedSettings()).showTree, true, 'Focus preserves panel preferences');
+    assert.equal((await savedSettings()).showPreview, true);
+    await page.locator('#toggle-focus').click();
+    assert(await page.locator('#tree-pane').isVisible());
+    assert(await page.locator('#preview-pane').isVisible());
+    assert.equal(await activeId(), firstId);
+    assert.deepEqual(await application.evaluate(() => global.testInputs), []);
     await page.locator('#new-terminal').click();
     await until(async () => (await page.getByRole('tab').count()) === 2, 'second terminal opens');
     const secondId = await activeId();
@@ -256,10 +320,129 @@ async function until(check, description, timeout = 12000) {
     );
     await until(() => hasOutput(secondId, 'SECOND_ENV_empty'), 'independent shell environment');
     assert(await hasOutput(secondId, 'SECOND_DIR_' + fixture));
-    await page.getByRole('tab', { name: 'Terminal 1', exact: true }).click();
+    await application.evaluate(() => {
+      global.testInputs = [];
+    });
+    await menuAction('Switch Session', 'CmdOrCtrl+K');
+    await page.locator('#session-dialog').waitFor({ state: 'visible' });
+    await page.locator('#session-search').fill('Terminal 1');
+    assert.equal(await page.locator('#session-list .session-choice').count(), 1);
+    await page.locator('#session-search').press('Escape');
+    assert(await page.locator('#session-dialog').isHidden());
+    assert.equal(await activeId(), secondId);
+    assert(await activeInput().evaluate((element) => element === document.activeElement));
+    assert.deepEqual(await application.evaluate(() => global.testInputs), []);
+    await page.locator('#switch-session').click();
+    await page.locator('#session-search').fill('Terminal 1');
+    const choice = await page.locator('#session-list .session-choice').elementHandle();
+    const context = await page.evaluate((id) => window.dwell.context(id), firstId);
+    await choice.focus();
+    const choiceBox = await choice.boundingBox();
+    await page.mouse.move(choiceBox.x + 25, choiceBox.y + 20);
+    await page.mouse.down();
+    try {
+      await application.evaluate(
+        ({ BrowserWindow }, { context, id }) => {
+          const window = BrowserWindow.getAllWindows().find(
+            (window) => window.webContents.getURL() === 'dwell://app/index.html',
+          );
+          window.webContents.send('terminal:context', context);
+          window.webContents.send('terminal:attention', {
+            id,
+            pending: true,
+            status: 'attention',
+            reason: 'Approval requested',
+          });
+        },
+        { context, id: secondId },
+      );
+      await until(
+        () =>
+          page
+            .locator('#tab-' + secondId)
+            .evaluate((element) => element.parentElement.dataset.status === 'attention'),
+        'background attention updates while a session choice is pressed',
+      );
+      assert(
+        await choice.evaluate(
+          (element) => element.isConnected && element === document.activeElement,
+        ),
+        'a live status update preserves the pressed choice and keyboard focus',
+      );
+    } finally {
+      await page.mouse.up();
+      await application.evaluate(({ BrowserWindow }, id) => {
+        BrowserWindow.getAllWindows()
+          .find((window) => window.webContents.getURL() === 'dwell://app/index.html')
+          .webContents.send('terminal:attention', {
+            id,
+            pending: false,
+            status: 'idle',
+            reason: '',
+          });
+      }, secondId);
+    }
+    await page.locator('#session-dialog').waitFor({ state: 'hidden' });
+    assert.equal(await activeId(), firstId, 'the switcher selects the existing PTY');
+    assert.equal(await page.getByRole('tab').count(), 2);
     await page.keyboard.press('Enter');
     await until(() => hasOutput(firstId, 'DRAFT_KEPT'), 'unfinished input survives a tab switch');
     assert.equal(await hasOutput(secondId, 'DRAFT_KEPT'), false);
+    await command('printf \'FOCUS_PID_%s\\n\' "$$"');
+    await until(() => hasOutput(firstId, 'FOCUS_PID_' + firstPid), 'Focus preserves the shell PID');
+    await application.evaluate(() => {
+      global.testResizes = [];
+    });
+    await menuAction('Increase Terminal Text Size', 'CmdOrCtrl+Plus');
+    await until(async () => (await savedSettings()).terminalFontSize === 15, 'terminal text zoom');
+    await until(
+      () =>
+        application.evaluate(
+          (_electron, id) => global.testResizes.some((item) => item.id === id),
+          firstId,
+        ),
+      'zoom resizes the active PTY',
+    );
+    assert.equal(
+      await application.evaluate(
+        (_electron, id) => global.testResizes.some((item) => item.id === id),
+        secondId,
+      ),
+      false,
+      'zoom leaves inactive PTY dimensions alone',
+    );
+    await page.locator('#tab-' + secondId).click();
+    await until(
+      () =>
+        application.evaluate(
+          (_electron, id) => global.testResizes.some((item) => item.id === id),
+          secondId,
+        ),
+      'an inactive PTY receives its new dimensions when activated',
+    );
+    for (let i = 0; i < 14; i++) await menuAction('Increase Terminal Text Size', 'CmdOrCtrl+Plus');
+    await until(async () => (await savedSettings()).terminalFontSize === 24, 'maximum text size');
+    for (let i = 0; i < 18; i++) await menuAction('Decrease Terminal Text Size', 'CmdOrCtrl+-');
+    await until(async () => (await savedSettings()).terminalFontSize === 11, 'minimum text size');
+    await menuAction('Reset Terminal Text Size', 'CmdOrCtrl+0');
+    await until(async () => (await savedSettings()).terminalFontSize === 14, 'default text size');
+    await menuAction('Increase Terminal Text Size (=)', 'CmdOrCtrl+=');
+    await until(
+      async () => (await savedSettings()).terminalFontSize === 15,
+      'equal-key zoom alias',
+    );
+    assert.equal(
+      await application.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()
+          .find((window) => window.webContents.getURL() === 'dwell://app/index.html')
+          .webContents.getZoomFactor(),
+      ),
+      1,
+      'terminal zoom does not scale the application chrome',
+    );
+    await menuAction('Reset Terminal Text Size', 'CmdOrCtrl+0');
+    await page.locator('#tab-' + firstId).click();
+    console.log('PASS: Focus, session switching and zoom preserve live PTYs and unfinished input');
     await command(
       "sleep 0.3; jot -b BACKGROUND_BLOCK........................................................ 16000; printf 'BACKGROUND_%s\\n' 'DONE'",
     );
@@ -320,6 +503,98 @@ async function until(check, description, timeout = 12000) {
         .locator('.xterm-helper-textarea')
         .evaluate((element) => element === document.activeElement),
     );
+    await page.locator('#close-preview').focus();
+    await application.evaluate(() => {
+      global.testInputs = [];
+    });
+    await page.keyboard.press('Escape');
+    assert(await page.locator('#preview-pane').isHidden());
+    assert(await activeInput().evaluate((element) => element === document.activeElement));
+    assert.deepEqual(await application.evaluate(() => global.testInputs), []);
+    await page.keyboard.press('Escape');
+    await until(
+      () => application.evaluate(() => global.testInputs.some((item) => item.data === '\x1b')),
+      'Escape in the terminal still reaches the PTY',
+    );
+    await page.keyboard.press('Control+c');
+    await page.locator('[data-path="src/App.tsx"]').click();
+    await application.evaluate(({ ipcMain }) => {
+      global.originalPreviewHandler = ipcMain._invokeHandlers.get('files:preview');
+      global.previewHeld = false;
+      global.previewArmed = false;
+      ipcMain.removeHandler('files:preview');
+      ipcMain.handle('files:preview', async (event, scope, relative) => {
+        const hold = global.previewArmed && relative === 'src/App.tsx' && !global.previewHeld;
+        if (hold) global.previewHeld = true;
+        const result = await global.originalPreviewHandler(event, scope, relative);
+        if (hold) {
+          await new Promise((resolve) => {
+            global.releasePreview = resolve;
+          });
+        }
+        return result;
+      });
+    });
+    try {
+      const reference = path.join(fixture, 'src/App.tsx') + ':2';
+      await command("printf '\\n%s\\n' " + quotePaths([reference]));
+      const prefix = reference.slice(0, 24);
+      await page.waitForFunction(
+        (prefix) =>
+          [...document.querySelectorAll('.terminal-session:not([hidden]) .xterm-rows > div')].some(
+            (row) => row.textContent.startsWith(prefix),
+          ),
+        prefix,
+      );
+      const referenceRow = page
+        .locator('.terminal-session:not([hidden]) .xterm-rows > div')
+        .filter({ hasText: prefix })
+        .last();
+      const referenceBox = await referenceRow.boundingBox();
+      await page.mouse.move(referenceBox.x + 25, referenceBox.y + 8);
+      await application.evaluate(() => {
+        global.previewArmed = true;
+      });
+      await page.keyboard.down('Meta');
+      try {
+        await page.mouse.click(referenceBox.x + 25, referenceBox.y + 8);
+      } finally {
+        await page.keyboard.up('Meta');
+      }
+      await until(
+        () => application.evaluate(() => Boolean(global.releasePreview)),
+        'file reference preview waits behind the controlled response',
+      );
+      await page.locator('[data-path="src/styles.css"]').click();
+      await until(
+        () =>
+          page
+            .locator('#preview-content')
+            .innerText()
+            .then((text) => text.includes('#e5e5e7')),
+        'the newer file preview is displayed',
+      );
+      await application.evaluate(() => global.releasePreview());
+      await page.evaluate(() => window.dwell.project());
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      );
+      assert.equal(await page.locator('#preview-name').textContent(), 'styles.css');
+      assert.equal(await page.locator('.referenced-line').count(), 0);
+      assert(await page.locator('#preview-note').isHidden());
+    } finally {
+      await application.evaluate(({ ipcMain }) => {
+        global.releasePreview?.();
+        ipcMain.removeHandler('files:preview');
+        ipcMain.handle('files:preview', global.originalPreviewHandler);
+        delete global.originalPreviewHandler;
+        delete global.releasePreview;
+        delete global.previewHeld;
+        delete global.previewArmed;
+      });
+    }
+    await page.locator('[data-path="src/App.tsx"]').click();
+    console.log('PASS: a delayed reference cannot highlight a newer file selection');
     await fs.writeFile(
       path.join(fixture, 'src/App.tsx'),
       'export default function App() {\n  return <main>Updated on disk — café.</main>;\n}\n',
@@ -343,7 +618,11 @@ async function until(check, description, timeout = 12000) {
       path.join(fixture, 'src/App.tsx'),
       'export default function App() {\n  return <main>Ready for review.</main>;\n}\n',
     );
-    await page.locator('#show-changes').click();
+    await page.locator('#toggle-focus').click();
+    await page.locator('#review-changes').click();
+    assert.equal(await page.locator('#toggle-focus').getAttribute('aria-pressed'), 'false');
+    assert(await page.locator('#tree-pane').isVisible());
+    assert.equal(await page.locator('#show-changes').getAttribute('aria-pressed'), 'true');
     await page.locator('.change-row[data-path="src/App.tsx"]').click();
     await until(
       async () => (await page.locator('.diff-heading').count()) === 2,
@@ -743,6 +1022,13 @@ for (const event of events) {
     input: JSON.stringify(event), encoding: 'utf8',
   });
   if (result.status !== 0) throw new Error('Hook failed: ' + result.stderr);
+  if (event.hook_event_name === 'UserPromptSubmit' && !result.stdout.trim())
+    throw new Error('Hook returned no sequence: ' + JSON.stringify({
+      TERM_PROGRAM: process.env.TERM_PROGRAM,
+      DWELL_CLAUDE_HOOK: process.env.DWELL_CLAUDE_HOOK,
+      noncePresent: Boolean(process.env.DWELL_CLAUDE_NONCE),
+      stderr: result.stderr,
+    }));
   if (result.stdout.trim()) process.stdout.write(JSON.parse(result.stdout).terminalSequence);
 }
 const done = () => process.stdout.write('\r\nDWELL_HOOK_' + process.argv[3] + '\r\n');
@@ -899,6 +1185,27 @@ if (cursorQuery) {
       assert.equal(await divider.getAttribute('aria-valuenow'), await divider.getAttribute(bound));
     }
     await page.locator('#toggle-preview').click();
+    const minimumWidth = await application.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows().find(
+        (window) => window.webContents.getURL() === 'dwell://app/index.html',
+      );
+      const [width] = window.getMinimumSize();
+      window.setSize(width, 600);
+      return width;
+    });
+    await page.waitForFunction((width) => window.innerWidth === width, minimumWidth);
+    assert(
+      await page.evaluate(() =>
+        ['#terminal-tabs', '#new-terminal', '#switch-session', '#toggle-preview'].every(
+          (selector) => {
+            const rect = document.querySelector(selector).getBoundingClientRect();
+            return rect.width > 0 && rect.left >= 0 && rect.right <= window.innerWidth;
+          },
+        ),
+      ),
+      'compact titlebar controls remain reachable at minimum width',
+    );
+    await page.screenshot({ path: path.join(output, 'dwell-focus-compact.png') });
     await application.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()
         .find((window) => window.webContents.getURL() === 'dwell://app/index.html')
@@ -965,6 +1272,20 @@ if (cursorQuery) {
       await page.keyboard.press('Control+c');
     }
     console.log('PASS: panel sizing and bottom input stay visible after scrolling and resizing');
+    await page.locator('.terminal-session:not([hidden]) .xterm-screen').hover();
+    await page.mouse.wheel(0, -500);
+    await page.locator('#scroll-bottom').waitFor({ state: 'visible' });
+    const historyGeometry = await page.evaluate(() => {
+      const button = document.querySelector('#scroll-bottom').getBoundingClientRect();
+      const terminal = document.querySelector('#terminal').getBoundingClientRect();
+      return { buttonBottom: button.bottom, terminalTop: terminal.top };
+    });
+    assert(
+      historyGeometry.buttonBottom <= historyGeometry.terminalTop,
+      'Back to live stays outside terminal cells',
+    );
+    await page.locator('#scroll-bottom').click();
+    await page.locator('#scroll-bottom').waitFor({ state: 'hidden' });
 
     await application.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()
@@ -1079,6 +1400,9 @@ if (cursorQuery) {
     });
     page = await application.firstWindow();
     await page.waitForSelector('[data-path="src/App.tsx"]');
+    assert(await page.locator('#tree-pane').isVisible(), 'saved visible panels are restored');
+    assert(await page.locator('#preview-pane').isVisible());
+    assert.equal(await page.locator('#toggle-focus').getAttribute('aria-pressed'), 'false');
     assert.equal(await page.locator('#project-name').textContent(), path.basename(fixture));
     assert.equal(await page.locator('#preview-name').textContent(), 'App.tsx');
     assert.equal(await page.locator('#preview-name').getAttribute('title'), 'src/App.tsx');

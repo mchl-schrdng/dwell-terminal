@@ -19,10 +19,11 @@ function fixture() {
     focus: () => (app.hidden = false),
   };
   class Window extends EventEmitter {
-    constructor() {
+    constructor(options = {}) {
       super();
       nativeWindows.push(this);
       this.messages = [];
+      this.bounds = { x: 0, y: 0, ...options };
       this.webContents = new EventEmitter();
       this.webContents.id = nativeWindows.length;
       this.webContents.mainFrame = {};
@@ -56,6 +57,12 @@ function fixture() {
     }
     setAlwaysOnTop() {}
     setVisibleOnAllWorkspaces() {}
+    getPosition() {
+      return [this.bounds.x, this.bounds.y];
+    }
+    setBounds(bounds) {
+      this.bounds = bounds;
+    }
     async loadURL(url) {
       this.webContents.mainFrame.url = url;
     }
@@ -125,20 +132,36 @@ function fixture() {
     sounds,
     app,
     advance: (ms) => (now += ms),
+    terminalEvents() {
+      return state.window.messages
+        .filter(({ channel }) => channel === 'terminal:attention')
+        .map(({ value }) => ({ ...value }));
+    },
     async enable() {
       await attention.setEnabled(true);
     },
+    addWindow() {
+      const other = { window: new Window(), root: '/projects/beta', sessions: new Map() };
+      windows.set(other.window.webContents.id, other);
+      return other;
+    },
     orb() {
-      return nativeWindows.at(-1);
+      return nativeWindows.findLast(
+        (window) => window.webContents.mainFrame.url === 'dwell://app/orb.html',
+      );
     },
     status() {
       return this.orb()
         .messages.filter(({ channel }) => channel === 'orb:state')
         .at(-1).value;
     },
-    open(event) {
+    open(event, target) {
       const sender = this.orb().webContents;
-      ipcMain.emit('orb:open', event || { sender, senderFrame: sender.mainFrame });
+      ipcMain.emit('orb:open', event || { sender, senderFrame: sender.mainFrame }, target);
+    },
+    card(visible) {
+      const sender = this.orb().webContents;
+      ipcMain.emit('orb:card', { sender, senderFrame: sender.mainFrame }, visible);
     },
   };
 }
@@ -191,6 +214,57 @@ test('the orb opens the highest priority terminal and preserves the other sessio
   f.open();
   assert.equal(f.status().status, 'working');
   assert.equal(f.status().count, 0);
+});
+
+test('an unread request wins over a visible request of equal severity', async () => {
+  const f = fixture();
+  await f.enable();
+  f.state.window.focus();
+  f.attention.progress(f.state, f.first, 4, 'Visible', 'response');
+  f.attention.progress(f.state, f.second, 4, 'Waiting', 'approval');
+  assert.equal(f.status().count, 1);
+  assert.equal(f.status().reason, 'Approval requested');
+  assert.equal(f.status().target, `${f.state.window.webContents.id}:${f.second}`);
+  f.open();
+  assert.equal(
+    f.state.window.messages.filter(({ channel }) => channel === 'terminal:focus').at(-1).value,
+    f.second,
+  );
+  assert.equal(f.status().count, 0);
+});
+
+test('a stale card target never falls back to an unrelated window', async () => {
+  const f = fixture();
+  await f.enable();
+  f.attention.progress(f.state, f.first, 4, 'Claude', 'approval');
+  const target = f.status().target;
+  const other = f.addWindow();
+  f.attention.clear(f.state, f.first);
+  f.open(undefined, target);
+  assert.equal(f.state.window.isFocused(), false);
+  assert.equal(other.window.isFocused(), false);
+  f.open();
+  assert.equal(other.window.isFocused(), true, 'an idle orb still opens Dwell');
+});
+
+test('the card reads the current tab name and checkout without replaying an alert', async () => {
+  const f = fixture();
+  await f.enable();
+  const session = f.state.sessions.get(f.first);
+  Object.assign(session, { label: 'Original', branch: 'old-branch' });
+  f.attention.progress(f.state, f.first, 4, session.label, 'approval');
+  session.label = 'Renamed';
+  f.attention.progress(f.state, f.first, 4, session.label, 'plan');
+  assert.equal(f.status().label, 'alpha · Renamed');
+  Object.assign(session, { label: 'Current task', branch: 'new-branch' });
+  f.card(true);
+  assert.equal(f.status().label, 'alpha · Current task');
+  assert.equal(f.status().checkout, 'new-branch · Current task');
+  assert.equal(f.status().reason, 'Plan to review');
+  assert.equal(f.status().count, 1);
+  assert.equal(f.sounds.length, 1);
+  f.card(false);
+  assert.equal(f.orb().bounds.width, 88);
 });
 
 test('typed duplicate suppression ends on reset and interrupt, preserving generic BEL', async () => {
@@ -308,4 +382,79 @@ test('semantic reasons update quietly without weakening a specific alert or erro
   assert.equal(f.status().reason, 'Response interrupted');
   f.attention.clear(f.state, f.first);
   assert.equal(f.status().status, 'idle');
+});
+
+test('terminal attention carries semantic reasons without transient idle or duplicate events', () => {
+  const f = fixture();
+  f.attention.progress(f.state, f.first, 3, 'Claude', 'none');
+  f.attention.progress(f.state, f.first, 4, 'Claude', 'approval');
+  f.advance(2000);
+  f.attention.progress(f.state, f.first, 4, 'Claude', 'plan');
+  f.attention.progress(f.state, f.first, 4, 'Claude', 'attention');
+  f.attention.progress(f.state, f.first, 4, 'Claude', 'plan');
+  f.attention.bell(f.state, f.first, 'Delayed bell');
+  assert.deepEqual(f.terminalEvents(), [
+    { id: f.first, pending: false, status: 'working', reason: 'Working' },
+    { id: f.first, pending: true, status: 'attention', reason: 'Approval requested' },
+    { id: f.first, pending: true, status: 'attention', reason: 'Plan to review' },
+  ]);
+  assert.equal(f.sounds.length, 1, 'refining the reason does not play a second sound');
+  f.attention.progress(f.state, f.first, 2, 'Claude', 'error');
+  f.attention.progress(f.state, f.first, 4, 'Claude', 'response');
+  assert.deepEqual(f.terminalEvents().slice(3), [
+    { id: f.first, pending: true, status: 'error', reason: 'Response interrupted' },
+  ]);
+});
+
+test('acknowledgement preserves Claude meaning for the terminal while settling the orb', async () => {
+  const f = fixture();
+  await f.enable();
+  for (const [value, status, reason, label] of [
+    [3, 'working', 'none', 'Working'],
+    [4, 'attention', 'response', 'Response ready'],
+    [2, 'error', 'error', 'Response interrupted'],
+  ]) {
+    f.attention.progress(f.state, f.first, value, 'Claude', reason);
+    f.attention.acknowledge(f.state, f.first);
+    assert.deepEqual(f.terminalEvents().at(-1), {
+      id: f.first,
+      pending: false,
+      status,
+      reason: label,
+    });
+    assert.equal(f.status().status, status === 'working' ? 'working' : 'idle');
+  }
+  f.attention.bell(f.state, f.second, 'Shell');
+  f.attention.acknowledge(f.state, f.second);
+  assert.deepEqual(f.terminalEvents().at(-1), {
+    id: f.second,
+    pending: false,
+    status: 'idle',
+    reason: '',
+  });
+});
+
+test('recovery replaces a stale reason and reset, interruption and cleanup explicitly clear it', () => {
+  const f = fixture();
+  f.attention.progress(f.state, f.first, 2, 'Claude', 'error');
+  f.attention.progress(f.state, f.first, 3, 'Claude', 'none');
+  assert.deepEqual(f.terminalEvents().slice(1), [
+    { id: f.first, pending: false, status: 'working', reason: 'Working' },
+  ]);
+  for (const clear of [
+    () => f.attention.progress(f.state, f.first, 0),
+    () => f.attention.interrupt(f.state, f.first),
+    () => f.attention.clear(f.state, f.first),
+    () => f.attention.clear(f.state),
+  ]) {
+    f.attention.progress(f.state, f.first, 4, 'Claude', 'response');
+    f.attention.acknowledge(f.state, f.first);
+    clear();
+    assert.deepEqual(f.terminalEvents().at(-1), {
+      id: f.first,
+      pending: false,
+      status: 'idle',
+      reason: '',
+    });
+  }
 });

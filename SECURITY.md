@@ -8,6 +8,6 @@ Dwell's renderer is sandboxed. Preview paths are restricted to the open project,
 
 The terminal is a real shell with your normal account permissions. The project boundary applies to previews, not to commands you run. Dwell is not a sandbox for untrusted shell commands.
 
-Claude integration is opt-in through the Help menu. Setup merges only Dwell-owned hooks into Claude's user settings and removal preserves other hooks. The bundled hook uses macOS tools, accepts bounded JSON and emits only fixed terminal status sequences; it does not read transcripts, execute message contents or open a network service. Any program in a terminal can emit a bell or progress sequence, so orb states are indicators rather than trusted proof of a program's identity or success.
+Claude integration is opt-in through the Help menu. Setup merges only Dwell-owned hooks into Claude's user settings and removal preserves other hooks. The bundled hook uses macOS tools, accepts bounded JSON and emits bounded terminal status and checkout identity sequences; it does not read transcripts, execute message contents or open a network service. Any program in a terminal can emit a bell or progress sequence, so orb states are indicators rather than trusted proof of a program's identity or success.
 
 This release is not Apple-notarized. Release archives include SHA-256 checksums. Dwell itself adds no telemetry or cloud services; programs launched inside it retain their own network behavior.
