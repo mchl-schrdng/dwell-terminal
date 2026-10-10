@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Start native Claude worktrees from the selected checkout’s committed HEAD, with terminal-scoped Files, Changes, previews and drop references.
+- Restore tabs without starting commands, and explicitly resume each saved Claude conversation in its original checkout using the same configured launcher.
+- Open validated file:line[:column] references in the source preview with ⌘click or the keyboard reference dialog.
+- Show Eclipse’s current project, checkout and reason on hover or focus, preserving its animation and sound.
+- Require Claude Code 2.1.296+ for workspaces; preserve launcher account settings and block unavailable checkouts and changed launchers from silent resume.
+
 ## 0.3.0
 
 - Add built-in Claude Code integration using official lifecycle hooks, with one-click setup and removal that preserve existing settings.

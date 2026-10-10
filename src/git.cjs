@@ -191,4 +191,4 @@ async function readDiff(root, relative) {
   return { sections, truncated };
 }
 
-module.exports = { listChanges, readDiff };
+module.exports = { git, listChanges, readDiff };

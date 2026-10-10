@@ -4,6 +4,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { $, node, icon, refreshIcons } from './ui.js';
 import { renderCode, renderMarkdown, renderDiff } from './preview.js';
+import { references } from './references.cjs';
 
 const api = window.dwell;
 let project;
@@ -19,6 +20,13 @@ let activeSession;
 let terminalCounter = 0;
 let changesBusy = false;
 const sessions = new Map();
+const navigation = new Map();
+let visibleRoot;
+let restoring = false;
+const scope = (session = activeSession) => ({
+  id: session?.id,
+  revision: session?.context?.revision,
+});
 const workspace = $('#workspace');
 const fileDragType = 'application/x-dwell-file';
 
@@ -37,7 +45,7 @@ function save() {
           ...settings,
           expanded: [...expanded],
           selected,
-          terminalNames: [...sessions.values()].map((session) => session.label),
+          tabs: [...sessions.values()].map((session) => ({ id: session.id, label: session.label })),
         })
         .catch(report),
     180,
@@ -90,12 +98,14 @@ function togglePane(which) {
 }
 
 function watch() {
+  if (!activeSession?.context || activeSession.context.status !== 'ready') return;
   const parent = selected?.includes('/') ? selected.slice(0, selected.lastIndexOf('/')) : '.';
-  api.watch(['.', ...expanded, parent]).catch(report);
+  api.watch(scope(), ['.', ...expanded, parent]).catch(report);
 }
 
 async function refreshTree() {
-  if (!project?.root) return;
+  if (!activeSession?.context || activeSession.context.status !== 'ready') return;
+  const context = scope();
   const version = ++treeVersion;
   if (settings.treeMode === 'changes') return refreshChanges(version);
   const fragment = document.createDocumentFragment();
@@ -104,7 +114,7 @@ async function refreshTree() {
     if (depth > 64) return;
     let entries;
     try {
-      entries = await api.list(relative, settings.hidden);
+      entries = await api.list(context, relative, settings.hidden);
     } catch (error) {
       fragment.append(node('div', 'tree-error', error.message));
       return;
@@ -178,14 +188,14 @@ function makeDraggable(row, relative) {
   row.draggable = true;
   row.addEventListener('dragstart', (event) => {
     event.dataTransfer.effectAllowed = 'copy';
-    event.dataTransfer.setData(fileDragType, relative);
+    event.dataTransfer.setData(fileDragType, JSON.stringify({ ...scope(), relative }));
   });
 }
 
 async function refreshChanges(version) {
   const tree = $('#tree');
   try {
-    const result = await api.changes();
+    const result = await api.changes(scope());
     if (version !== treeVersion) return;
     const focused = document.activeElement?.dataset.path;
     const scroll = tree.scrollTop;
@@ -321,9 +331,9 @@ function emptyPreview(text, actions = false) {
   if (actions) {
     const buttons = node('div', 'actions');
     const open = node('button', 'text-button', 'Open in Default App');
-    open.addEventListener('click', () => api.openFile(selected).catch(report));
+    open.addEventListener('click', () => api.openFile(scope(), selected).catch(report));
     const reveal = node('button', 'text-button', 'Show in Finder');
-    reveal.addEventListener('click', () => api.reveal(selected).catch(report));
+    reveal.addEventListener('click', () => api.reveal(scope(), selected).catch(report));
     buttons.append(open, reveal);
     container.append(buttons);
   }
@@ -376,7 +386,7 @@ function formatSize(size) {
       : `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 async function loadPreview() {
-  if (!selected) return;
+  if (!selected || !activeSession?.context || activeSession.context.status !== 'ready') return;
   $('#preview-name').textContent = selected.split('/').pop();
   $('#preview-name').title = selected;
   $('#preview-path').textContent = selected.split('/').join(' / ');
@@ -384,8 +394,8 @@ async function loadPreview() {
   try {
     const file =
       settings.treeMode === 'changes'
-        ? { ...(await api.diff(selected)), kind: 'diff' }
-        : await api.preview(selected);
+        ? { ...(await api.diff(scope(), selected)), kind: 'diff' }
+        : await api.preview(scope(), selected);
     if (version !== previewVersion) return;
     if (lastPreview && JSON.stringify(file) === JSON.stringify(lastPreview)) return;
     lastPreview = file;
@@ -404,12 +414,89 @@ async function loadPreview() {
 function updateTerminalControls() {
   const terminal = activeSession?.terminal;
   $('#terminal-empty').hidden = sessions.size > 0;
-  $('#restart-terminal').hidden = !activeSession || activeSession.starting || activeSession.running;
+  $('#restart-terminal').hidden =
+    !activeSession || activeSession.starting || activeSession.running || activeSession.restored;
   $('#scroll-bottom').hidden =
     !terminal || terminal.buffer.active.viewportY >= terminal.buffer.active.baseY;
 }
 
+function showContext(session) {
+  const context = session?.context;
+  if (visibleRoot && settings)
+    navigation.set(visibleRoot, {
+      selected,
+      expanded: [...expanded],
+      treeMode: settings.treeMode,
+      scroll: $('#tree').scrollTop,
+      previewScroll: $('#preview-content').scrollTop,
+    });
+  visibleRoot = context?.checkoutRoot;
+  treeVersion++;
+  previewVersion++;
+  lastPreview = null;
+  changesBusy = false;
+  const nav = navigation.get(visibleRoot);
+  selected = nav?.selected || null;
+  expanded = new Set(nav?.expanded || []);
+  settings.treeMode = nav?.treeMode || 'files';
+  markdownSource = false;
+  $('#tree').replaceChildren();
+  $('#preview-name').textContent = 'Preview';
+  $('#preview-path').textContent = '';
+  $('#file-status').textContent = '';
+  $('#preview-note').hidden = true;
+  emptyPreview(
+    context?.status === 'starting'
+      ? 'Starting worktree… Waiting for Claude to confirm its checkout.'
+      : context?.status === 'unavailable'
+        ? context.error || 'This checkout is unavailable.'
+        : 'Select a file to preview it.',
+  );
+  const root = context?.checkoutRoot || project.root;
+  $('#project-path').textContent = root.startsWith(project.home + '/')
+    ? '~' + root.slice(project.home.length)
+    : root;
+  $('#project-path').title = root;
+  $('#checkout-status').textContent =
+    context?.status === 'starting'
+      ? 'Starting worktree…'
+      : context?.status === 'unavailable'
+        ? 'Checkout unavailable'
+        : [context?.branch, context?.shared ? 'Shared Claude checkout' : '']
+            .filter(Boolean)
+            .join(' · ');
+  layout();
+  if (context?.status === 'ready') {
+    const version = treeVersion;
+    refreshTree()
+      .then(() => {
+        if (version + 1 === treeVersion) $('#tree').scrollTop = nav?.scroll || 0;
+      })
+      .catch(report);
+    watch();
+    const preview = previewVersion;
+    loadPreview().then(() => {
+      if (previewVersion === preview + 1) $('#preview-content').scrollTop = nav?.previewScroll || 0;
+    });
+  }
+}
+
+function acceptContext(context) {
+  const session = sessions.get(context?.id);
+  if (!session || session.context?.revision > context.revision) return;
+  const changed =
+    session.context?.revision !== context.revision || session.context?.shared !== context.shared;
+  session.context = context;
+  if (!context.cwd && session.linkEpochs) {
+    for (const epoch of session.linkEpochs) epoch.marker.dispose();
+    session.linkEpochs = [];
+  }
+  if (changed && session === activeSession) showContext(session);
+  if (session.restored) showRestore(session);
+}
+
 function activateSession(session, focus = true) {
+  const changed = activeSession !== session;
   activeSession = session;
   for (const item of sessions.values()) {
     const active = item === session;
@@ -421,7 +508,11 @@ function activateSession(session, focus = true) {
   session?.tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   updateTerminalControls();
   if (focus) session?.terminal.focus();
-  if (session) api.active(session.id);
+  if (session) {
+    api.active(session.id);
+    if (changed) showContext(session);
+    api.context(session.id).then(acceptContext).catch(report);
+  } else if (changed) showContext(null);
   requestAnimationFrame(() => {
     if (session && activeSession === session) session.fit.fit();
   });
@@ -464,14 +555,22 @@ function renameTerminal(session) {
   input.select();
 }
 
-async function createTerminal(savedLabel) {
+async function createTerminal(savedLabel, options = {}) {
   if (!project?.root) return;
   if (sessions.size >= 32) {
     message('Up to 32 terminals can be open in one window.');
     return;
   }
-  const id = crypto.randomUUID();
+  const id = options.saved?.id || crypto.randomUUID();
   const label = savedLabel || `Terminal ${terminalCounter + 1}`;
+  let context;
+  try {
+    context =
+      options.saved || (await api.createTerminal(id, label, options.parentId ?? activeSession?.id));
+  } catch (error) {
+    report(error);
+    return;
+  }
   terminalCounter++;
   const pane = node('div', 'terminal-session');
   pane.id = `session-${id}`;
@@ -533,10 +632,12 @@ async function createTerminal(savedLabel) {
     tabItem,
     label,
     closeButton,
-    starting: true,
+    starting: false,
     running: false,
     exited: false,
     closing: false,
+    context,
+    restored: Boolean(options.saved),
   };
   sessions.set(id, session);
   term.loadAddon(fit);
@@ -552,6 +653,31 @@ async function createTerminal(savedLabel) {
     api.progress(id, Number(data[2]), session.label);
     return true;
   });
+  term.parser.registerOscHandler(777, async (data) => {
+    if (!data.startsWith('dwell;')) return false;
+    try {
+      const context = await api.claude(id, data);
+      if (context) {
+        acceptContext(context);
+        const buffer = term.buffer.active;
+        if (buffer.type === 'normal' && session.linkEpochs.at(-1)?.revision !== context.revision) {
+          const marker = term.registerMarker(0);
+          if (marker)
+            session.linkEpochs.push({
+              marker,
+              x: buffer.cursorX,
+              revision: context.revision,
+              cwd: context.cwd,
+            });
+          if (session.linkEpochs.length > 128) session.linkEpochs.shift().marker.dispose();
+        }
+      }
+    } catch (error) {
+      report(error);
+    }
+    return true;
+  });
+  installFileLinks(session);
   term.onResize(({ cols, rows }) => {
     if (session.running) api.resize(id, cols, rows);
   });
@@ -579,24 +705,208 @@ async function createTerminal(savedLabel) {
   refreshIcons();
   activateSession(session);
   fit.fit();
+  if (options.saved) {
+    session.starting = false;
+    showRestore(session);
+    updateTerminalControls();
+  } else await startSession(session, options.mode || 'shell', options.task);
+  if (!restoring) save();
+  return session;
+}
+
+function showRestore(session) {
+  session.pane.querySelector('.restore-session')?.remove();
+  const card = node('div', 'restore-session');
+  const missing = session.context.status === 'unavailable';
+  card.append(
+    node(
+      'p',
+      '',
+      missing
+        ? 'This checkout is unavailable. Open a terminal in the original project to recover; Claude will not resume there automatically.'
+        : session.context.conversationId
+          ? 'Resume this Claude conversation in its original checkout.'
+          : 'This terminal is saved. Shell processes are not restored.',
+    ),
+  );
+  if (session.error) card.prepend(node('p', 'session-error', session.error));
+  if (session.context.conversationId) {
+    const resume = node('button', 'text-button', 'Resume Claude');
+    resume.disabled = missing;
+    resume.addEventListener('click', () => startSession(session, 'resume'));
+    card.append(resume);
+  }
+  const open = node(
+    'button',
+    'text-button',
+    missing ? 'Open Terminal in Project' : 'Open Terminal',
+  );
+  open.addEventListener('click', () => startSession(session, missing ? 'recover' : 'shell'));
+  card.append(open);
+  session.pane.append(card);
+}
+
+async function startSession(session, mode, task) {
+  const { terminal: term, id, tab } = session;
+  if (session.starting) return;
+  session.starting = true;
+  session.error = null;
+  session.exited = false;
+  session.pane.querySelectorAll('.restore-session button').forEach((button) => {
+    button.disabled = true;
+  });
   session.ready = api
-    .start(id, term.cols, term.rows)
+    .start(id, term.cols, term.rows, mode, task)
     .then((result) => {
+      if (result.existing) return;
+      session.restored = false;
+      session.pane.querySelector('.restore-session')?.remove();
       session.running = !session.exited;
+      session.tabItem.classList.remove('ended');
+      if (result.context) acceptContext(result.context);
       tab.title = `${session.label} · ${result?.shell || 'shell'} · Double-click to rename`;
       // A pane may have been resized while its shell was starting.
       if (session.running) api.resize(id, term.cols, term.rows);
     })
     .catch((error) => {
-      term.writeln(`\r\nCould not start the shell: ${error.message}`);
+      session.error = error.message;
+      term.writeln(`\r\nCould not start this session: ${error.message}`);
+      message(error.message);
     })
     .finally(() => {
       session.starting = false;
+      if (session.restored) showRestore(session);
       if (activeSession === session) updateTerminalControls();
     });
   await session.ready;
   save();
-  return session;
+}
+
+function installFileLinks(session) {
+  const term = session.terminal;
+  let hovered;
+  let pressed;
+  session.pane.addEventListener('mouseleave', () => {
+    pressed = null;
+  });
+  // Claude enables mouse reporting. Consume only modified file-link clicks before xterm sends them.
+  session.pane.addEventListener(
+    'mousedown',
+    (event) => {
+      if (!event.metaKey || !hovered || event.button !== 0) return;
+      pressed = hovered;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    },
+    true,
+  );
+  session.pane.addEventListener(
+    'mouseup',
+    (event) => {
+      if (!pressed) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (event.metaKey && pressed === hovered)
+        openReference(session, pressed.reference, pressed.epoch).catch(report);
+      pressed = null;
+    },
+    true,
+  );
+  session.linkEpochs = [];
+  // Cursor edits/fullscreen redraws cannot reliably date a relative path. Leave those unlinked.
+  const invalidate = () => {
+    for (const epoch of session.linkEpochs) epoch.marker.dispose();
+    session.linkEpochs = [];
+    return false;
+  };
+  for (const final of ['A', 'B', 'E', 'F', 'G', 'H', 'f', 'd', 'J', 'K', 'L', 'M', 'P', 'X'])
+    term.parser.registerCsiHandler({ final }, invalidate);
+  term.onResize(invalidate);
+  term.registerLinkProvider({
+    provideLinks(y, callback) {
+      const buffer = term.buffer.active;
+      let first = y - 1;
+      let last = first;
+      while (first > 0 && buffer.getLine(first)?.isWrapped && y - first < 16) first--;
+      while (last + 1 < buffer.length && buffer.getLine(last + 1)?.isWrapped && last - first < 16)
+        last++;
+      let text = '';
+      const cells = [];
+      for (let row = first; row <= last; row++) {
+        const line = buffer.getLine(row);
+        for (let col = 0; col < term.cols; col++) {
+          const cell = line.getCell(col);
+          if (cell.getWidth() === 0) continue;
+          const chars = cell.getChars() || ' ';
+          for (let i = 0; i < chars.length; i++) cells.push({ x: col + 1, y: row + 1 });
+          text += chars;
+        }
+      }
+      const links = references(text).flatMap((reference) => {
+        const start = cells[reference.index];
+        const end = cells[reference.index + reference.length - 1];
+        if (!start || !end || start.y > y || end.y < y) return [];
+        const epoch =
+          buffer.type === 'normal'
+            ? session.linkEpochs.findLast(
+                (entry) =>
+                  !entry.marker.isDisposed &&
+                  (entry.marker.line < start.y - 1 ||
+                    (entry.marker.line === start.y - 1 && entry.x < start.x)),
+              )
+            : null;
+        if (!reference.path.startsWith('/') && !epoch?.cwd) return [];
+        const hit = { reference, epoch: epoch?.revision };
+        return [
+          {
+            text: reference.text,
+            range: { start, end },
+            hover() {
+              hovered = hit;
+            },
+            leave() {
+              if (hovered === hit) hovered = null;
+            },
+            activate(event) {
+              if (event.metaKey) openReference(session, reference, epoch?.revision).catch(report);
+            },
+          },
+        ];
+      });
+      callback(links);
+    },
+  });
+}
+
+async function openReference(session, reference, epoch) {
+  if (session !== activeSession) return;
+  const context = scope(session);
+  const result = await api.fileLine(context, reference, epoch);
+  if (session !== activeSession || session.context.revision !== context.revision) return;
+  settings.treeMode = 'files';
+  markdownSource = true;
+  lastPreview = null;
+  selected = result.relative;
+  await selectFile(result.relative);
+  if (session !== activeSession || session.context.revision !== context.revision) return;
+  const line = $('#preview-content').querySelectorAll('.source-line')[result.line - 1];
+  if (!line) {
+    $('#preview-note').hidden = false;
+    $('#preview-note').replaceChildren(
+      node('span', '', 'That line is outside the loaded text preview. '),
+    );
+    const open = node('button', 'text-button', 'Open in Default App');
+    open.addEventListener('click', () => api.openFile(context, result.relative).catch(report));
+    $('#preview-note').append(open);
+    return;
+  }
+  line.classList.add('referenced-line');
+  line.scrollIntoView({ block: 'center', inline: 'nearest' });
+  message(
+    `Line ${result.line}${result.column > 1 ? ` · Column ${result.column}` : ''} · Read-only`,
+  );
+  setTimeout(() => line.classList.remove('referenced-line'), 2200);
+  refreshTree().catch(report);
 }
 
 async function closeSession(session) {
@@ -654,6 +964,7 @@ api.onFocusTerminal((id) => {
   const session = sessions.get(id);
   if (session) activateSession(session);
 });
+api.onContext(acceptContext);
 window.addEventListener('focus', () => {
   if (activeSession) api.active(activeSession.id);
   if (settings?.treeMode === 'changes') refreshGit().catch(report);
@@ -666,6 +977,11 @@ api.onExit(({ id, exitCode }) => {
   session.tabItem.classList.add('ended');
   session.tab.title = `Session ended (${exitCode})`;
   session.terminal.writeln(`\r\n\x1b[90mSession ended (${exitCode}).\x1b[0m`);
+  if (session.context.conversationId) {
+    session.restored = true;
+    showRestore(session);
+  }
+  api.context(id).then(acceptContext).catch(report);
   if (activeSession === session) updateTerminalControls();
 });
 new ResizeObserver(() => requestAnimationFrame(() => activeSession?.fit.fit())).observe(
@@ -708,8 +1024,17 @@ async function openProject(value) {
   $('#toggle-hidden').setAttribute('aria-pressed', String(settings.hidden));
   layout();
   if (!sessions.size) {
-    const names = settings.terminalNames?.length ? settings.terminalNames : [null];
-    for (const name of names) await createTerminal(name);
+    navigation.set(value.root, {
+      selected,
+      expanded: [...expanded],
+      treeMode: settings.treeMode,
+      scroll: 0,
+    });
+    restoring = true;
+    if (value.tabs.length)
+      for (const tab of value.tabs) await createTerminal(tab.label, { saved: tab });
+    else await createTerminal();
+    restoring = false;
   }
   await refreshTree();
   watch();
@@ -718,9 +1043,7 @@ async function openProject(value) {
 }
 
 async function action(name) {
-  const nameInput = document.activeElement?.matches('.terminal-tab-name')
-    ? document.activeElement
-    : null;
+  const nameInput = document.activeElement?.matches('input') ? document.activeElement : null;
   if (name === 'copy') {
     const text = nameInput
       ? nameInput.value.slice(nameInput.selectionStart, nameInput.selectionEnd)
@@ -733,7 +1056,7 @@ async function action(name) {
       const text = await api.paste();
       if (nameInput.isConnected) {
         const available =
-          nameInput.maxLength -
+          (nameInput.maxLength > 0 ? nameInput.maxLength : 8192) -
           nameInput.value.length +
           nameInput.selectionEnd -
           nameInput.selectionStart;
@@ -758,6 +1081,13 @@ async function action(name) {
   if (name === 'tree' || name === 'preview') togglePane(name);
   if (name === 'terminal') activeSession?.terminal.focus();
   if (name === 'new-terminal') await createTerminal();
+  if (name === 'new-worktree') showWorktreeDialog();
+  if (name === 'claude-launcher') showLauncherDialog();
+  if (name === 'file-reference') {
+    $('#reference-value').value = activeSession?.terminal.getSelection() || '';
+    $('#reference-error').textContent = '';
+    $('#reference-dialog').showModal();
+  }
   if (name === 'close-terminal') await closeSession(activeSession);
   if (name === 'next-terminal') cycleTerminal(1);
   if (name === 'previous-terminal') cycleTerminal(-1);
@@ -768,6 +1098,72 @@ async function action(name) {
     save();
   }
 }
+let worktreeSource;
+function showWorktreeDialog() {
+  if (!activeSession) return;
+  worktreeSource = scope();
+  $('#worktree-origin').textContent = activeSession.context.checkoutRoot;
+  $('#worktree-name').value = '';
+  $('#worktree-error').textContent = '';
+  $('#worktree-dialog').showModal();
+}
+function showLauncherDialog() {
+  $('#launcher-command').value = project.launcher.command;
+  $('#launcher-args').value = JSON.stringify(project.launcher.args);
+  $('#launcher-error').textContent = '';
+  $('#launcher-dialog').showModal();
+}
+for (const button of document.querySelectorAll('[data-close-dialog]'))
+  button.addEventListener('click', () => button.closest('dialog').close());
+$('#worktree-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const parent = sessions.get(worktreeSource.id);
+  const task = $('#worktree-name').value.trim();
+  if (!parent || parent.context.revision !== worktreeSource.revision) {
+    $('#worktree-error').textContent =
+      'The source checkout changed. Close this dialog and try again.';
+    return;
+  }
+  if (
+    !task ||
+    [...task].some(
+      (char) =>
+        char === '/' || char === '\\' || char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
+    )
+  ) {
+    $('#worktree-error').textContent = 'Use a task name without slashes or control characters.';
+    return;
+  }
+  $('#worktree-dialog').close();
+  await createTerminal(task, { mode: 'worktree', task, parentId: parent.id });
+});
+$('#launcher-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    project.launcher = await api.launcher({
+      command: $('#launcher-command').value.trim(),
+      args: JSON.parse($('#launcher-args').value),
+    });
+    $('#launcher-dialog').close();
+  } catch (error) {
+    $('#launcher-error').textContent = error.message;
+  }
+});
+$('#reference-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const value = references($('#reference-value').value.trim());
+  if (value.length !== 1 || !value[0].path.startsWith('/')) {
+    $('#reference-error').textContent =
+      'Enter one absolute path:line or path:line:column. Quote paths with spaces.';
+    return;
+  }
+  try {
+    await openReference(activeSession, value[0]);
+    $('#reference-dialog').close();
+  } catch (error) {
+    $('#reference-error').textContent = error.message;
+  }
+});
 $('#project-button').addEventListener('click', () => api.chooseFolder().catch(report));
 $('#open-folder').addEventListener('click', () => api.chooseFolder().catch(report));
 $('#toggle-tree').addEventListener('click', () => action('tree'));
@@ -788,6 +1184,11 @@ for (const mode of ['files', 'changes']) {
 }
 $('#refresh-changes').addEventListener('click', () => refreshGit().catch(report));
 $('#new-terminal').addEventListener('click', () => createTerminal().catch(report));
+$('#new-terminal-menu').addEventListener('click', () => api.newMenu().catch(report));
+$('#new-terminal').addEventListener('contextmenu', (event) => {
+  event.preventDefault();
+  api.newMenu().catch(report);
+});
 $('#empty-new-terminal').addEventListener('click', () => createTerminal().catch(report));
 $('#restart-terminal').addEventListener('click', async () => {
   const previous = activeSession;
@@ -880,11 +1281,22 @@ $('#terminal').addEventListener(
     $('#terminal').classList.remove('file-drop');
     const target = activeSession;
     if (!target?.running) return;
-    const relative = event.dataTransfer.getData(fileDragType);
+    const reference = event.dataTransfer.getData(fileDragType);
     const files = [...event.dataTransfer.files];
     try {
-      const text = relative ? await api.reference(relative) : await api.droppedFiles(files);
-      if (!sessions.has(target.id) || !target.running) return;
+      const context = scope(target);
+      const source = reference ? JSON.parse(reference) : null;
+      if (source && (source.id !== context.id || source.revision !== context.revision))
+        throw new Error('The file belongs to a different terminal context. Drag it again.');
+      const text = source
+        ? await api.reference(context, source.relative)
+        : await api.droppedFiles(context, files);
+      if (
+        !sessions.has(target.id) ||
+        !target.running ||
+        target.context.revision !== context.revision
+      )
+        return;
       target.terminal.paste(text);
       if (target === activeSession) target.terminal.focus();
     } catch (error) {
@@ -894,7 +1306,9 @@ $('#terminal').addEventListener(
   true,
 );
 api.onMenu((name) => action(name).catch(report));
-api.onFiles(() => {
+api.onFiles((context) => {
+  if (context.id !== activeSession?.id || context.revision !== activeSession.context.revision)
+    return;
   refreshTree().then(watch).catch(report);
   loadPreview();
 });

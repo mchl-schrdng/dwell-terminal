@@ -1035,10 +1035,10 @@ if (cursorQuery) {
     console.log('PASS: clean shell exit');
     await page.getByRole('button', { name: 'Close Terminal 1', exact: true }).click();
     await page.waitForSelector('#terminal-empty:not([hidden])');
-    await page.locator('[data-path="README.md"]').click();
-    await page.locator('[data-path="src/App.tsx"]').click();
     await page.locator('#empty-new-terminal').click();
     await page.waitForSelector('.xterm-helper-textarea');
+    await page.locator('[data-path="README.md"]').click();
+    await page.locator('[data-path="src/App.tsx"]').click();
     const renamedId = await activeId();
     await command('export DWELL_RENAME_TEST=alive');
     await page.getByRole('tab').dblclick();
@@ -1059,6 +1059,7 @@ if (cursorQuery) {
     assert.equal(await page.getByRole('tab', { name: 'Claude — Dwell', exact: true }).count(), 1);
     await command('exit');
     await page.locator('#new-terminal').click();
+    await until(async () => (await activeId()) !== renamedId, 'new tab is ready before renaming');
     await page.getByRole('tab', { selected: true }).dblclick();
     await page.getByRole('textbox', { name: 'Terminal name' }).fill('Git');
     await page.getByRole('textbox', { name: 'Terminal name' }).press('Enter');

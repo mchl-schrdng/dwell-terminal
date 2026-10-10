@@ -10,8 +10,8 @@
 }
 body {
   margin: 0;
-  width: 88px;
-  height: 88px;
+  width: 100vw;
+  height: 100vh;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -27,7 +27,9 @@ body {
   color: #e8e9ed;
   display: grid;
   place-items: center;
-  position: relative;
+  position: absolute;
+  left: 6px;
+  top: 6px;
   cursor: grab;
 }
 #orb:focus-visible {
@@ -36,6 +38,36 @@ body {
 }
 #orb:active {
   cursor: grabbing;
+}
+#orb-card {
+  position: absolute;
+  left: 0;
+  top: 10px;
+  width: 254px;
+  min-height: 96px;
+  padding: 14px 16px;
+  border: 1px solid #4b4d56;
+  border-radius: 12px;
+  background: #202127;
+  color: #e5e5e7;
+  font:
+    12px/1.55 -apple-system,
+    sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+#orb-card span,
+#orb-card strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#card-checkout {
+  color: #aeb1bc;
+}
+#card-reason {
+  margin-top: 6px;
 }
 #orb-dust {
   position: absolute;

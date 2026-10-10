@@ -169,3 +169,55 @@ test(
     assert.equal(runHook('x'.repeat(1024 * 1024 + 1)), undefined);
   },
 );
+
+test(
+  'workspace hooks send identity, cwd and reasons only; integration upgrades preserve user hooks',
+  { skip: process.platform !== 'darwin' },
+  async (t) => {
+    const { parseClaudeMessage } = require('../src/claude.cjs');
+    const { randomUUID } = require('node:crypto');
+    const nonce = randomUUID();
+    const id = randomUUID();
+    for (const [event, fields, reason] of [
+      ['PreToolUse', { tool_name: 'AskUserQuestion' }, 'question'],
+      ['PreToolUse', { tool_name: 'ExitPlanMode' }, 'plan'],
+      ['PermissionRequest', {}, 'approval'],
+      ['Stop', {}, 'response'],
+      ['StopFailure', {}, 'error'],
+      ['CwdChanged', { new_cwd: '/project/src' }, 'none'],
+    ]) {
+      const output = runHook(
+        {
+          hook_event_name: event,
+          session_id: id,
+          cwd: '/project',
+          tool_input: 'private',
+          transcript_path: '/secret',
+          ...fields,
+        },
+        { DWELL_CLAUDE_NONCE: nonce },
+      );
+      const data = output.terminalSequence.slice('\x1b]777;'.length, -1);
+      const parsed = parseClaudeMessage(data, nonce);
+      assert.equal(parsed.reason, reason);
+      assert.equal(parsed.id, id);
+      assert.equal(parsed.cwd, fields.new_cwd || '/project');
+      assert(!JSON.stringify(output).includes('private'));
+      assert(!JSON.stringify(output).includes('secret'));
+    }
+    const { directory, filename } = await configuration(t);
+    await fs.writeFile(
+      filename,
+      JSON.stringify({
+        hooks: { CwdChanged: [{ hooks: [{ type: 'command', command: 'user-hook' }] }] },
+      }),
+    );
+    await setClaudeIntegration(directory, true, true);
+    assert.equal(JSON.parse(await fs.readFile(filename)).hooks.CwdChanged.length, 2);
+    await setClaudeIntegration(directory, false);
+    assert.equal(
+      JSON.parse(await fs.readFile(filename)).hooks.CwdChanged[0].hooks[0].command,
+      'user-hook',
+    );
+  },
+);

@@ -96,6 +96,15 @@
           >
             <i data-lucide="plus"></i>
           </button>
+          <button
+            id="new-terminal-menu"
+            class="icon-button"
+            aria-label="More terminal actions"
+            aria-haspopup="menu"
+            title="More terminal actions"
+          >
+            <i data-lucide="chevron-down"></i>
+          </button>
         </div>
         <div id="terminal">
           <div id="terminal-empty" class="empty-state" hidden>
@@ -162,9 +171,62 @@
       </aside>
     </main>
     <footer id="statusbar">
-      <span id="project-path">Dwell</span
+      <span id="project-path">Dwell</span><span id="checkout-status"></span
       ><span id="status-message" role="status" aria-live="polite"></span
       ><span id="file-status"></span>
     </footer>
+    <dialog id="worktree-dialog" aria-labelledby="worktree-title">
+      <form id="worktree-form">
+        <h2 id="worktree-title">New Claude Worktree</h2>
+        <p>
+          A separate branch from this checkout’s committed HEAD. Uncommitted changes are not copied.
+        </p>
+        <p id="worktree-origin" class="dialog-detail"></p>
+        <label for="worktree-name">Task name</label>
+        <input id="worktree-name" maxlength="80" placeholder="Auth" required autocomplete="off" />
+        <p id="worktree-error" role="alert"></p>
+        <div class="actions">
+          <button type="button" class="text-button" data-close-dialog>Cancel</button
+          ><button type="submit" class="text-button primary">Create Worktree</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="reference-dialog" aria-labelledby="reference-title">
+      <form id="reference-form">
+        <h2 id="reference-title">Open File Reference</h2>
+        <label for="reference-value">Absolute path:line[:column]</label>
+        <input id="reference-value" required maxlength="4200" autocomplete="off" />
+        <p class="dialog-detail">
+          An absolute path avoids guessing the directory of older output. Quote paths with spaces.
+        </p>
+        <p id="reference-error" role="alert"></p>
+        <div class="actions">
+          <button type="button" class="text-button" data-close-dialog>Cancel</button
+          ><button type="submit" class="text-button primary">Open Preview</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="launcher-dialog" aria-labelledby="launcher-title">
+      <form id="launcher-form">
+        <h2 id="launcher-title">Claude Launcher</h2>
+        <p>
+          Use the same launcher and account as your usual terminal. New worktrees and Resume Claude
+          both use this command.
+        </p>
+        <label for="launcher-command">Executable or command name</label>
+        <input id="launcher-command" required autocomplete="off" placeholder="claude" />
+        <label for="launcher-args">Fixed arguments (JSON array)</label>
+        <input id="launcher-args" required autocomplete="off" value="[]" />
+        <p class="dialog-detail">
+          Executable launchers such as maison are supported. Shell aliases and functions must be
+          wrapped in an executable. Do not enter credentials here.
+        </p>
+        <p id="launcher-error" role="alert"></p>
+        <div class="actions">
+          <button type="button" class="text-button" data-close-dialog>Cancel</button
+          ><button type="submit" class="text-button primary">Save Launcher</button>
+        </div>
+      </form>
+    </dialog>
   </body>
 </html>

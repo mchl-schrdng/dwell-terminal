@@ -147,7 +147,37 @@ initialize();
 
 let start;
 let moved = false;
+let target;
+let hideCard;
+const card = document.querySelector('#orb-card');
+window.orb.onLayout((layout) => {
+  card.hidden = !layout;
+  button.style.left = `${(layout?.x || 0) + 6}px`;
+  button.style.top = `${(layout?.y || 0) + 6}px`;
+  card.style.left = `${layout?.cardX || 0}px`;
+});
+button.addEventListener('pointerenter', () => {
+  clearTimeout(hideCard);
+  window.orb.card(true);
+});
+card.addEventListener('pointerenter', () => clearTimeout(hideCard));
+document.body.addEventListener('pointerleave', () => {
+  hideCard = setTimeout(() => window.orb.card(false), 120);
+});
+document.addEventListener('focusin', () => window.orb.card(true));
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') window.orb.card(false);
+});
+card.addEventListener('click', () => window.orb.open(target));
 window.orb.onState((state) => {
+  target = state.target;
+  document.querySelector('#card-project').textContent = state.project;
+  document.querySelector('#card-checkout').textContent = state.checkout;
+  document.querySelector('#card-reason').textContent = state.reason;
+  card.setAttribute(
+    'aria-label',
+    `${state.project} · ${state.checkout} · ${state.reason} · Return to session`,
+  );
   const { label } = state;
   const count = state.count;
   status = state.status || (count ? 'attention' : 'idle');
@@ -169,7 +199,7 @@ window.orb.onState((state) => {
         : status === 'working'
           ? 'Claude is working · Open Dwell'
           : 'Open Dwell';
-  button.setAttribute('aria-label', title);
+  button.setAttribute('aria-label', `${title} · ${state.reason || ''}`);
   button.title = `${title} · Drag to move · Right-click to hide`;
   if (reducedMotion.matches && !document.hidden) draw(0);
 });
@@ -190,7 +220,7 @@ button.addEventListener('lostpointercapture', () => {
   window.orb.drag('end');
 });
 button.addEventListener('click', () => {
-  if (!moved) window.orb.open();
+  if (!moved) window.orb.open(target);
 });
 button.addEventListener('keydown', () => {
   moved = false;

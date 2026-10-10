@@ -30,6 +30,8 @@ Your shell, your projects, your way of working. Dwell brings the things you reac
 - **Context within reach.** Preview code, Markdown and images as they change. Drop a file into the terminal to insert its path.
 - **Changes in plain sight.** Review staged and unstaged Git diffs beside the conversation that created them.
 
+The [source preview](docs/guide.md#claude-workspaces-source-preview) adds isolated Claude worktrees, exact conversation resume, file references and a reason card for Eclipse. These additions are unreleased and require Claude Code 2.1.296+ for workspaces.
+
 ![Close-up of Dwell's Git changes and terminal tabs beside its read-only code diff. See the context. Keep your place.](docs/images/readme/workspace.png)
 
 <br>

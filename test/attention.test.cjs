@@ -286,3 +286,26 @@ test('orb visibility does not discard session state and window cleanup removes i
   assert.equal(f.status().status, 'idle');
   assert.equal(f.status().count, 0);
 });
+
+test('semantic reasons update quietly without weakening a specific alert or error', async () => {
+  const f = fixture();
+  await f.enable();
+  f.attention.progress(f.state, f.first, 4, 'Claude', 'approval');
+  assert.equal(f.status().reason, 'Approval requested');
+  f.advance(2000);
+  f.attention.progress(f.state, f.first, 4, 'Claude', 'plan');
+  assert.equal(f.status().reason, 'Plan to review');
+  assert.equal(f.sounds.length, 1);
+  f.attention.progress(f.state, f.first, 4, 'Claude', 'attention');
+  assert.equal(f.status().reason, 'Plan to review');
+  f.attention.progress(f.state, f.first, 4, 'Claude', 'question');
+  assert.equal(f.status().reason, 'Question');
+  f.attention.progress(f.state, f.first, 3, 'Claude', 'none');
+  assert.equal(f.status().reason, 'Working');
+  f.attention.progress(f.state, f.first, 2, 'Claude', 'error');
+  assert.equal(f.status().reason, 'Response interrupted');
+  f.attention.progress(f.state, f.first, 4, 'Claude', 'response');
+  assert.equal(f.status().reason, 'Response interrupted');
+  f.attention.clear(f.state, f.first);
+  assert.equal(f.status().status, 'idle');
+});

@@ -7,6 +7,16 @@ function createAttention(windows, preferences, savePreferences) {
   let orb;
   let drag;
   let lastSound = 0;
+  let cardAnchor;
+  const reasons = {
+    approval: 'Approval requested',
+    question: 'Question',
+    plan: 'Plan to review',
+    response: 'Response ready',
+    error: 'Response interrupted',
+    attention: 'Needs attention',
+    none: 'Working',
+  };
 
   function status(item) {
     return item.acknowledged && item.status !== 'working' ? 'idle' : item.status;
@@ -23,11 +33,24 @@ function createAttention(windows, preferences, savePreferences) {
   function update() {
     if (!orb || orb.isDestroyed()) return;
     const item = first();
+    const session = item?.state.sessions.get(item.id);
     orb.webContents.send('orb:state', {
       count: [...items.values()].filter((entry) => entry.pending).length,
       status: item ? status(item) : 'idle',
       label: item ? `${path.basename(item.state.root)} · ${item.label}` : 'Dwell',
+      target: item ? `${item.state.window.webContents.id}:${item.id}` : null,
+      project: item ? path.basename(item.state.root) : 'Dwell',
+      checkout: item
+        ? [
+            session?.branch || (session?.checkoutRoot && path.basename(session.checkoutRoot)),
+            item.label,
+          ]
+            .filter(Boolean)
+            .join(' · ')
+        : '',
+      reason: item ? reasons[item.reason] || 'Needs attention' : 'No session needs attention',
     });
+    if (!item) showCard(false);
   }
 
   function dismiss(item) {
@@ -71,20 +94,41 @@ function createAttention(windows, preferences, savePreferences) {
     }
   }
 
-  function signal(state, id, label, nextStatus, typed) {
+  function signal(
+    state,
+    id,
+    label,
+    nextStatus,
+    typed,
+    reason = nextStatus === 'error' ? 'error' : nextStatus === 'working' ? 'none' : 'attention',
+  ) {
     if (!state.sessions.get(id)?.process) return;
     const focused = !app.isHidden() && state.window.isFocused();
     const key = `${state.window.webContents.id}:${id}`;
     const previous = items.get(key);
     if (!typed && (previous?.typed || (focused && state.activeSession === id))) return;
     if (typed && previous?.status === 'error' && nextStatus === 'attention') return;
-    if (previous?.status === nextStatus && previous.typed === typed) return;
+    if (previous?.status === nextStatus && previous.typed === typed) {
+      if (reason !== 'attention' && reason !== previous.reason) {
+        previous.reason = reason;
+        previous.acknowledged = false;
+        previous.pending = !(focused && state.activeSession === id);
+        state.window.webContents.send('terminal:attention', {
+          id,
+          pending: previous.pending,
+          status: nextStatus,
+        });
+        update();
+      }
+      return;
+    }
     if (previous) dismiss(previous);
     const alert = nextStatus === 'attention' || nextStatus === 'error';
     const item = {
       state,
       id,
       typed,
+      reason,
       status: nextStatus,
       acknowledged: false,
       pending: alert && !(focused && state.activeSession === id),
@@ -123,12 +167,19 @@ function createAttention(windows, preferences, savePreferences) {
     }
   }
 
-  function progress(state, id, value, label) {
+  function progress(state, id, value, label, reason) {
     if (!state.sessions.get(id)?.process || !Number.isInteger(value) || value < 0 || value > 4)
       return;
     if (value === 0) clear(state, id);
     else
-      signal(state, id, label, ['idle', 'working', 'error', 'working', 'attention'][value], true);
+      signal(
+        state,
+        id,
+        label,
+        ['idle', 'working', 'error', 'working', 'attention'][value],
+        true,
+        Object.hasOwn(reasons, reason) ? reason : undefined,
+      );
   }
 
   function interrupt(state, id) {
@@ -149,6 +200,7 @@ function createAttention(windows, preferences, savePreferences) {
 
   function destroyOrb() {
     drag = null;
+    cardAnchor = null;
     if (!orb) return;
     const previous = orb;
     orb = null;
@@ -183,7 +235,7 @@ function createAttention(windows, preferences, savePreferences) {
       minimizable: false,
       maximizable: false,
       fullscreenable: false,
-      focusable: false,
+      focusable: true,
       skipTaskbar: true,
       hasShadow: false,
       show: false,
@@ -207,6 +259,7 @@ function createAttention(windows, preferences, savePreferences) {
     window.on('closed', () => {
       if (orb === window) orb = null;
     });
+    window.on('hide', () => showCard(false));
     try {
       await window.loadURL('dwell://app/orb.html');
     } catch (error) {
@@ -229,13 +282,48 @@ function createAttention(windows, preferences, savePreferences) {
       event.senderFrame.url === 'dwell://app/orb.html'
     );
   }
-  ipcMain.on('orb:open', (event) => {
-    if (validOrb(event)) open(first());
+  function showCard(visible) {
+    if (!orb || orb.isDestroyed()) return;
+    if (!visible) {
+      if (cardAnchor) {
+        orb.setBounds({ ...cardAnchor, width: 88, height: 88 });
+        cardAnchor = null;
+        orb.webContents.send('orb:layout', null);
+      }
+      return;
+    }
+    if (cardAnchor || drag || !first()) return;
+    const [x, y] = orb.getPosition();
+    cardAnchor = { x, y };
+    const area = screen.getDisplayNearestPoint({ x, y }).workArea;
+    const width = 354;
+    const height = 120;
+    const left = x - area.x >= width - 88;
+    const bounds = {
+      x: Math.max(area.x, Math.min(area.x + area.width - width, left ? x - (width - 88) : x)),
+      y: Math.max(area.y, Math.min(area.y + area.height - height, y - 16)),
+      width,
+      height,
+    };
+    orb.setBounds(bounds);
+    orb.webContents.send('orb:layout', { x: x - bounds.x, y: y - bounds.y, cardX: left ? 0 : 100 });
+  }
+  ipcMain.on('orb:card', (event, visible) => {
+    if (validOrb(event)) showCard(visible === true);
+  });
+  ipcMain.on('orb:open', (event, target) => {
+    if (validOrb(event)) {
+      const item = typeof target === 'string' ? items.get(target) : first();
+      showCard(false);
+      open(item);
+    }
   });
   ipcMain.on('orb:drag', (event, phase) => {
     if (!validOrb(event)) return;
-    if (phase === 'start')
+    if (phase === 'start') {
+      showCard(false);
       drag = { cursor: screen.getCursorScreenPoint(), bounds: orb.getBounds() };
+    }
     if (phase === 'move' && drag) {
       const cursor = screen.getCursorScreenPoint();
       const point = position(

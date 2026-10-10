@@ -5,7 +5,7 @@ export default [
   { ignores: ['dist/**', 'release/**', 'test-results/**', '.*-cache/**'] },
   js.configs.recommended,
   { files: ['**/*.cjs', '**/*.mjs'], languageOptions: { globals: globals.node } },
-  { files: ['src/**/*.js', 'scripts/test-app.cjs'], languageOptions: { globals: globals.browser } },
+  { files: ['src/**/*.js', 'scripts/test-*.cjs'], languageOptions: { globals: globals.browser } },
   {
     rules: {
       'no-empty': ['error', { allowEmptyCatch: true }],

@@ -1,0 +1,29 @@
+#!/bin/sh
+# Apply only the worktree base after a launcher has supplied its account settings.
+# In particular, a second --settings flag must not erase a launcher's apiKeyHelper.
+settings='{}'
+next=false
+for arg do
+  if [ "$next" = true ]; then settings=$arg; next=false; fi
+  case "$arg" in
+    --settings) next=true ;;
+    --settings=*) settings=${arg#--settings=} ;;
+  esac
+done
+case "$settings" in
+  \{*) ;;
+  *)
+    [ -f "$settings" ] && [ "$(/usr/bin/stat -f %z "$settings")" -le 2097152 ] || {
+      printf '%s\n' 'Dwell: Claude settings must be a regular file smaller than 2 MiB.' >&2
+      exit 1
+    }
+    settings=$(/bin/cat "$settings") ;;
+esac
+if ! printf '%s' "$settings" | /usr/bin/plutil -extract worktree json -o - - >/dev/null 2>&1; then
+  settings=$(printf '%s' "$settings" | /usr/bin/plutil -insert worktree -json '{}' -o - -) || exit 1
+fi
+settings=$(printf '%s' "$settings" | /usr/bin/plutil -replace worktree.baseRef -string head -o - -) || exit 1
+# plutil defaults to XML when editing; Claude expects JSON.
+settings=$(printf '%s' "$settings" | /usr/bin/plutil -convert json -o - -) || exit 1
+[ -n "$DWELL_CLAUDE_BINARY" ] || exit 1
+exec "$DWELL_CLAUDE_BINARY" "$@" --settings "$settings"
