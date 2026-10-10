@@ -683,7 +683,54 @@ async function until(check, description, timeout = 12000) {
       () => page.evaluate(() => /\r\n\d+ \d+\r\n/.test(window.testOutput)),
       'terminal dimensions reach the PTY',
     );
-    console.log('PASS: panel size limits, keyboard controls and narrow window');
+    for (const height of [650, 720, 900]) {
+      await application.evaluate(
+        ({ BrowserWindow }, height) =>
+          BrowserWindow.getAllWindows()
+            .find((window) => window.webContents.getURL() === 'dwell://app/index.html')
+            .setSize(1000, height),
+        height,
+      );
+      await command("printf 'VISIBLE_LINE\\n%.0s' {1..120}");
+      await page.keyboard.type('INPUT_STAYS_VISIBLE');
+      await until(
+        () =>
+          page
+            .locator('.terminal-session:not([hidden]) .xterm-rows')
+            .innerText()
+            .then((text) => text.includes('INPUT_STAYS_VISIBLE')),
+        'typed input rendered after scrolling',
+      );
+      const geometry = await page.evaluate(() => {
+        const screen = document
+          .querySelector('.terminal-session:not([hidden]) .xterm-screen')
+          .getBoundingClientRect();
+        const cursor = document
+          .querySelector('.terminal-session:not([hidden]) .xterm-cursor')
+          .getBoundingClientRect();
+        const terminal = document.querySelector('#terminal').getBoundingClientRect();
+        const footer = document.querySelector('#statusbar').getBoundingClientRect();
+        return {
+          screenBottom: screen.bottom,
+          screenRight: screen.right,
+          cursorBottom: cursor.bottom,
+          terminalBottom: terminal.bottom,
+          terminalRight: terminal.right,
+          footerTop: footer.top,
+        };
+      });
+      assert(
+        geometry.screenBottom <= geometry.terminalBottom,
+        `terminal rows overflow at height ${height}: ${JSON.stringify(geometry)}`,
+      );
+      assert(
+        geometry.screenRight <= geometry.terminalRight,
+        'terminal columns stay inside the pane',
+      );
+      assert(geometry.cursorBottom <= geometry.footerTop, 'input stays above the status bar');
+      await page.keyboard.press('Control+c');
+    }
+    console.log('PASS: panel sizing and bottom input stay visible after scrolling and resizing');
 
     await application.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()
