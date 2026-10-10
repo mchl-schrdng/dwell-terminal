@@ -452,7 +452,7 @@ async function until(check, description, timeout = 12000) {
         ),
       'orb becomes visible',
     );
-    const orbPosition = await application.evaluate(({ screen, BrowserWindow }) => {
+    const edgePosition = await application.evaluate(({ screen, BrowserWindow }) => {
       global.originalCursorPoint = screen.getCursorScreenPoint;
       global.orbTestCursor = { x: 0, y: 0 };
       screen.getCursorScreenPoint = () => global.orbTestCursor;
@@ -478,8 +478,27 @@ async function until(check, description, timeout = 12000) {
               .find((window) => window.getTitle() === 'Dwell Desktop Orb')
               .getPosition(),
           ),
-        ) === JSON.stringify(orbPosition),
+        ) === JSON.stringify(edgePosition),
       'orb dragging stays in the display work area',
+    );
+    await orb.evaluate(() => window.orb.drag('end'));
+    // macOS can nudge windows at the Dock boundary when they are recreated.
+    const orbPosition = edgePosition.map((coordinate) => coordinate - 32);
+    await orb.evaluate(() => window.orb.drag('start'));
+    await application.evaluate(() => {
+      global.orbTestCursor = { x: 9968, y: 9968 };
+    });
+    await orb.evaluate(() => window.orb.drag('move'));
+    await until(
+      async () =>
+        JSON.stringify(
+          await application.evaluate(({ BrowserWindow }) =>
+            BrowserWindow.getAllWindows()
+              .find((window) => window.getTitle() === 'Dwell Desktop Orb')
+              .getPosition(),
+          ),
+        ) === JSON.stringify(orbPosition),
+      'orb moves away from the display edge',
     );
     await orb.evaluate(() => window.orb.drag('end'));
     await until(
