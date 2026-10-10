@@ -330,8 +330,7 @@ body.resizing {
 }
 .terminal-session {
   position: absolute;
-  inset: 0;
-  padding: 15px 9px 7px 18px;
+  inset: 15px 9px 7px 18px;
 }
 .xterm {
   height: 100%;

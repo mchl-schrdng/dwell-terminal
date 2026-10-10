@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- Keep typed input and the last terminal row visible above the status bar after scrolling and resizing.
+- Scope CI badges to main-branch pushes and clarify Claude Code bell notification setup.
+
 ## 0.1.0
 
 A fresh public release of Dwell for macOS on Apple Silicon.

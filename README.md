@@ -3,8 +3,8 @@
 <p align="center">A little room to focus.</p>
 
 <p align="center">
-  <a href="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/ci.yml"><img src="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/codeql.yml"><img src="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
+  <a href="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/ci.yml"><img src="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/ci.yml/badge.svg?branch=main&amp;event=push" alt="CI"></a>
+  <a href="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/codeql.yml"><img src="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/codeql.yml/badge.svg?branch=main&amp;event=push" alt="CodeQL"></a>
   <a href="https://github.com/mchl-schrdng/dwell-terminal/releases/latest"><img src="https://img.shields.io/github/v/release/mchl-schrdng/dwell-terminal?color=555&label=release" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-555" alt="MIT license"></a>
 </p>
@@ -44,6 +44,8 @@ Choose **Changes** above the file tree to review staged and unstaged edits separ
 Drag a file from **Files**, **Changes**, or Finder into a running terminal to insert its quoted absolute path. This works after changing directories and handles spaces and apostrophes. Dropping a file does not press Enter. Up to 32 files can be dropped from Finder at once; paths containing control characters are rejected.
 
 When a terminal rings its bell, Dwell marks its tab if you are elsewhere. **View → Desktop Orb** enables a small cloud of dust above your desktop windows. Its particles drift slowly in silver blue at rest, turn amber and move more freely for an alert, and become copper when several terminals are waiting. Colors and movement ease back to idle as alerts are opened. Click to open the waiting terminal, drag to move, or right-click to hide. Reduced motion stops the animation while preserving the color and count; reduced transparency adds a solid backing. Its position and enabled state are saved. It is off by default. With the orb off, background alerts use silent macOS notifications, subject to your system notification settings. Repeated alerts from the same pending terminal are grouped.
+
+The orb reacts to requests for attention, not to launching Claude or to ongoing work. Alerts appear when another terminal is selected or Dwell is in the background.
 
 To have Claude Code send these alerts, add this setting to your existing `~/.claude/settings.json`, preserving its other settings:
 
