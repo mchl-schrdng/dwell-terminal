@@ -1,29 +1,72 @@
-<p align="center"><img src="assets/dwell-icon.svg" width="104" alt="Dwell"></p>
-<h1 align="center">Dwell</h1>
-<p align="center">A little room to focus.</p>
-
 <p align="center">
-  <a href="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/ci.yml"><img src="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/ci.yml/badge.svg?branch=main&amp;event=push" alt="CI"></a>
-  <a href="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/codeql.yml"><img src="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/codeql.yml/badge.svg?branch=main&amp;event=push" alt="CodeQL"></a>
-  <a href="https://github.com/mchl-schrdng/dwell-terminal/releases/latest"><img src="https://img.shields.io/github/v/release/mchl-schrdng/dwell-terminal?color=555&label=release" alt="Latest release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-555" alt="MIT license"></a>
+  <img src="assets/dwell-icon.svg" width="88" alt="Dwell app icon">
 </p>
 
-A quiet terminal for macOS. Your files on the left, independent terminal tabs in the center, and a live preview on the right.
+<h1 align="center">Dwell</h1>
+<p align="center"><strong>A little room to focus.</strong></p>
+<p align="center">A quiet macOS terminal, made for working with Claude Code.</p>
 
-![Dwell on macOS, with Git changes, two terminal tabs and a read-only diff](docs/images/dwell.png)
+<p align="center">
+  <a href="https://github.com/mchl-schrdng/dwell-terminal/releases/latest"><strong>Download for Apple Silicon</strong></a>
+  &nbsp; · &nbsp;
+  <a href="docs/guide.md">Getting started</a>
+  &nbsp; · &nbsp;
+  <a href="https://github.com/mchl-schrdng/dwell-terminal/releases">What's new</a>
+</p>
 
-- Run a server, execute tests and work in separate terminal tabs.
-- Preview code, Markdown and images as files change on disk.
-- Review Git changes and drop file paths straight into your prompt.
-- Get quiet attention alerts, with an optional desktop orb.
-- A single visual identity: plain, translucent graphite.
+<br>
 
-## Get Dwell
+![Dwell's graphite workspace on a warm copper desktop, with Git changes on the left, independent terminal tabs in the center, a code diff on the right, and the amber Eclipse companion beside the window.](docs/images/readme/desktop.png)
 
-[Download for Apple Silicon](https://github.com/mchl-schrdng/dwell-terminal/releases/latest). Unzip, move **Dwell.app** to Applications, then choose **Open Folder**.
+<p align="center"><sub>A real Dwell capture, composed on an original desktop backdrop.</sub></p>
 
-Dwell uses your existing shell and command-line tools. This release is not Apple-notarized.
+<br>
+
+## Your tools. A little more room.
+
+Your shell, your projects, your way of working. Dwell brings the things you reach for into one quiet workspace.
+
+- **Room for every task.** Independent terminals for Claude, your server and your tests. Name a tab and keep your place.
+- **Context within reach.** Preview code, Markdown and images as they change. Drop a file into the terminal to insert its path.
+- **Changes in plain sight.** Review staged and unstaged Git diffs beside the conversation that created them.
+
+![Close-up of Dwell's Git changes and terminal tabs beside its read-only code diff. See the context. Keep your place.](docs/images/readme/workspace.png)
+
+<br>
+
+## Meet Eclipse.
+
+A small, optional presence on your desktop. Fluid light that lets you know when Claude needs you, even while you're doing something else.
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/images/readme/eclipse-still.png">
+  <img src="docs/images/readme/eclipse-motion.gif" width="1200" alt="Eclipse in motion: cool blue while Claude works, faster amber when input is needed or a response is ready, and a soft red pulse when an API error interrupts a response.">
+</picture>
+
+**Cool while working. Amber for your attention. Red for an API error.** Amber moves twice as fast. Click Eclipse to return to the terminal that needs you, drag it anywhere, or hide it when you want the desktop to yourself.
+
+### A sound that gives you space.
+
+An original, quiet spatial chime accompanies background alerts. A little nudge when you're elsewhere. Silence while you're already there.
+
+[Listen to the chime ↗](https://github.com/mchl-schrdng/dwell-terminal/raw/refs/heads/main/src/orb-notification.wav) · Toggle it in **View → Notification Sound**.
+
+Eclipse respects reduced motion. Its idle movement is decorative; a finished response does not guarantee that a task succeeded. [How Claude notifications work →](docs/claude-notifications.md)
+
+<br>
+
+## Make yourself at home.
+
+1. **Install Dwell.** [Download the latest release](https://github.com/mchl-schrdng/dwell-terminal/releases/latest), unzip it, and move **Dwell.app** to Applications.
+2. **Open a project.** Choose **Open Folder**. Your existing shell and command-line tools are ready to use.
+3. **Bring Claude along.** Enable **Help → Claude Code Integration**, then start a new interactive Claude Code session. Show Eclipse with **View → Desktop Orb**.
+
+Requires an Apple Silicon Mac. Claude integration requires Claude Code 2.1.141 or later, installed separately. The release is not Apple-notarized; see the [installation guide](docs/guide.md#install) if macOS blocks it.
+
+Dwell adds no telemetry, accounts or cloud sync. Previews are read-only. Your layout comes back on relaunch; running shell sessions do not.
+
+<details>
+<summary><strong>A few shortcuts worth knowing</strong></summary>
 
 | Shortcut  | Action                   |
 | --------- | ------------------------ |
@@ -33,27 +76,12 @@ Dwell uses your existing shell and command-line tools. This release is not Apple
 | ⌘J        | Focus the terminal       |
 | ⌘⇧[ / ⌘⇧] | Previous / next terminal |
 
-Double-click a terminal tab to rename it (or press F2 while the tab is focused). Press Enter to save or Escape to cancel. Tab names and their order are restored for each project with fresh shell sessions.
+Double-click a tab to rename it. More in the [guide](docs/guide.md).
 
-Previews are read-only. Project layout is restored on relaunch; running shell sessions are not. Dwell adds no telemetry, accounts or cloud sync.
+</details>
 
-## Working with Claude Code
-
-Choose **Changes** above the file tree to review staged and unstaged edits separately. Click a changed file to see its diff in the preview. New and deleted files are included; renames appear as a deletion and an addition. Changes refresh while the view is visible, with a refresh button for an immediate check. Dwell never stages, commits or discards changes. Submodule contents are excluded, and large previews are bounded.
-
-Drag a file from **Files**, **Changes**, or Finder into a running terminal to insert its quoted absolute path. This works after changing directories and handles spaces and apostrophes. Dropping a file does not press Enter. Up to 32 files can be dropped from Finder at once; paths containing control characters are rejected.
-
-Enable **Help → Claude Code Integration**, then start a new interactive Claude Code session (2.1.141 or later). Dwell installs a small set of official Claude hooks, preserving your other settings and hooks. They only run inside Dwell. Use the same menu to remove them. No extra package, daemon or conversation reader is needed.
-
-**View → Desktop Orb** adds Eclipse: a small, fluid ring of light. It stays cool while Claude works, turns amber and moves twice as fast when Claude needs input or finishes a response, and turns red when an API error interrupts the response. A failed tool that Claude can recover from does not trigger a red alert. The movement at rest is decorative.
-
-Click the orb to return to the most urgent terminal, drag to move, or right-click to hide. Reading an alert clears its unread marker; further work or a new prompt updates its state. The orb remembers its position, respects reduced motion and has a static fallback without WebGL.
-
-Background alerts play a quiet, original spatial chime. **View → Notification Sound** mutes it. Duplicate alerts are grouped, and macOS notifications take over when the orb is off or Dwell is hidden, subject to your system settings. Ordinary terminal bells remain supported outside a structured Claude session.
-
-A finished response is not proof that all work succeeded. Abrupt process crashes may emit no event. See [Claude event coverage and limits](docs/claude-notifications.md).
-
-## Development
+<details>
+<summary><strong>Build it yourself</strong></summary>
 
 Requires an Apple Silicon Mac and Node.js 24.
 
@@ -68,6 +96,25 @@ npm run test:app  # Real terminal and desktop integration tests
 npm run package  # macOS app, ZIP and SHA-256 checksum
 ```
 
-CI runs on every pull request. Version tags run the release checks. Releases are published by [mchl-schrdng](https://github.com/mchl-schrdng) after those checks pass.
+Built with Electron, xterm.js and plain JavaScript. [Contributing](CONTRIBUTING.md) · [Architecture and agent instructions](AGENTS.md) · [Release process](docs/releases.md)
 
-[Contributing](CONTRIBUTING.md) · [Agent instructions](AGENTS.md) · [Security](SECURITY.md) · [MIT license](LICENSE)
+</details>
+
+<br>
+
+---
+
+<p align="center">
+  Made by <a href="https://github.com/mchl-schrdng">mchl-schrdng</a>
+  &nbsp; · &nbsp;
+  <a href="LICENSE">MIT</a>
+  &nbsp; · &nbsp;
+  <a href="SECURITY.md">Security</a>
+  &nbsp; · &nbsp;
+  <a href="docs/images/readme/README.md">Visual credits</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/ci.yml"><img src="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/ci.yml/badge.svg?branch=main&amp;event=push" alt="CI"></a>
+  <a href="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/codeql.yml"><img src="https://github.com/mchl-schrdng/dwell-terminal/actions/workflows/codeql.yml/badge.svg?branch=main&amp;event=push" alt="CodeQL"></a>
+</p>
