@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 - Choose one of six gradient tab colors with a right-click, or return to Graphite. Colors stay with each saved tab; inactive tabs remain subdued and Claude status indicators stay distinct.
 
