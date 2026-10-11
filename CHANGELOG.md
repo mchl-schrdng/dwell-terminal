@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.3
+
+- Restore native window dragging from the empty space beside terminal tabs. Only tabs and controls exclude dragging; tab switching, closing and renaming remain interactive.
+- Add a regression check for the empty titlebar area in the macOS application suite.
+
 ## 0.4.2
 
 - Keep Eclipse on the active Dwell window’s screen and reanchor it when displays or their work areas change.

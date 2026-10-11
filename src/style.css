@@ -116,7 +116,7 @@ svg {
 }
 #titlebar button,
 #titlebar input,
-#terminal-tabs {
+.terminal-tab-item {
   -webkit-app-region: no-drag;
 }
 .project-button {
