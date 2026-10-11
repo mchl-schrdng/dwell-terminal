@@ -34,7 +34,7 @@ Structured events change the orb even when the terminal is visible. Only backgro
 
 Repeated events in the same state stay silent, including after acknowledgement. Sounds are separated by at least 1.5 seconds. The bundled 1.05-second stereo chime is generated from original oscillators and a quiet echo; its reproducible source is `scripts/generate-orb-sound.cjs`. **View → Notification Sound** mutes it.
 
-The 0.4.0 workspace preview adds semantic reasons to Eclipse’s transient card. Specific reasons can replace one another without another sound, including after acknowledgement of the previous reason. A delayed generic idle event cannot replace a specific reason or an error. Recovery, interruption and closure clear the current reason.
+Dwell 0.4.0 adds semantic reasons to Eclipse’s transient card. Specific reasons can replace one another without another sound, including after acknowledgement of the previous reason. A delayed generic idle event cannot replace a specific reason or an error. Recovery, interruption and closure clear the current reason.
 
 BEL remains a fallback for ordinary terminal programs. During structured Claude activity, generic bells are ignored so Claude's delayed idle notification does not duplicate an immediate hook alert. A session reset restores ordinary bells. No change to `preferredNotifChannel` is required for the integration.
 
