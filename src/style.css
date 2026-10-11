@@ -312,6 +312,81 @@ body.resizing {
   border-color: rgba(205, 212, 229, 0.12);
   background: rgba(205, 212, 229, 0.09);
 }
+.terminal-tab-item[data-color]:not([data-color='']) {
+  position: relative;
+  isolation: isolate;
+  color: #f0edf5;
+  background: #242429;
+}
+.terminal-tab-item[data-color]:not([data-color=''])::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(#11101855, #11101855), var(--tab-gradient);
+  opacity: 0.22;
+}
+.terminal-tab-item[data-color]:not([data-color='']).active {
+  color: #fff;
+  border-color: #ffffff50;
+}
+.terminal-tab-item[data-color]:not([data-color='']).active::before {
+  background: linear-gradient(#1110188c, #1110188c), var(--tab-gradient);
+  opacity: 1;
+}
+.terminal-tab-item[data-color]:not([data-color='']) .tab-close,
+.terminal-tab-item[data-color]:not([data-color='']).ended .terminal-tab {
+  color: inherit;
+}
+#tab-colors {
+  width: 270px;
+  inset: auto;
+  margin: 0;
+  padding: 14px;
+  color: var(--text);
+  background: #222329;
+  border: 1px solid #45464d;
+  border-radius: 12px;
+  box-shadow: 0 12px 36px #0006;
+  -webkit-app-region: no-drag;
+}
+#tab-colors-title {
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+#tab-color-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.tab-color-choice {
+  padding: 5px;
+  font-size: 11px;
+  border: 1px solid transparent;
+}
+.tab-color-choice[aria-pressed='true'] {
+  border-color: #d8d5df;
+}
+.tab-color-choice[data-color=''] {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tab-color-swatch {
+  display: block;
+  height: 28px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  background: var(--tab-gradient), #36373d;
+}
+.tab-color-choice[data-color=''] .tab-color-swatch {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+}
 .terminal-tab {
   min-width: 0;
   display: flex;
@@ -771,6 +846,9 @@ kbd {
 .terminal-tab-item[data-status='error']:not(.needs-attention) .terminal-tab::after {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--error);
+}
+.terminal-tab-item[data-color]:not([data-color='']) .terminal-tab::after {
+  outline: 2px solid #242429;
 }
 #terminal.file-drop {
   outline: 1px solid #adbfd6;

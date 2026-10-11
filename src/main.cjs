@@ -19,6 +19,7 @@ const pty = require('node-pty');
 const { resolveFile, listFiles, readPreview, friendlyError, quotePaths } = require('./files.cjs');
 const { git, listChanges, readDiff } = require('./git.cjs');
 const { createAttention } = require('./attention.cjs');
+const { tabColor } = require('./tab-colors.cjs');
 const {
   setClaudeIntegration,
   isClaudeIntegrationEnabled,
@@ -247,6 +248,7 @@ function publicContext(state, session) {
   return {
     id: session.id,
     label: session.label,
+    color: session.color || null,
     checkoutRoot: session.checkoutRoot,
     conversationId: session.conversationId || null,
     launcher: session.launcher || null,
@@ -273,6 +275,7 @@ function persistTabs(state) {
   settings.tabs = [...state.sessions.values()].map((session) => ({
     id: session.id,
     label: session.label,
+    color: session.color || null,
     checkoutRoot: session.checkoutRoot,
     conversationId: session.conversationId || null,
     launcher: session.launcher || null,
@@ -471,6 +474,7 @@ handle('settings:save', (state, value) => {
   };
   for (const tab of Array.isArray(value.tabs) ? value.tabs.slice(0, 32) : []) {
     const session = state.sessions.get(tab?.id);
+    if (session) session.color = tabColor(tab.color);
     if (session && typeof tab.label === 'string')
       session.label = tab.label.trim().slice(0, 80) || 'Terminal';
   }

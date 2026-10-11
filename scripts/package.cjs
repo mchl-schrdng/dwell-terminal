@@ -29,7 +29,7 @@ async function main() {
     // Ship only the runtime, without caches, tests, source assets or repo metadata.
     ignore: (file) => {
       if (file.startsWith('/src/'))
-        return !/^\/src\/(main|preload|orb-preload|attention|claude|files|git|workspaces)\.cjs$/.test(
+        return !/^\/src\/(main|preload|orb-preload|attention|claude|files|git|workspaces|tab-colors)\.cjs$/.test(
           file,
         );
       return (

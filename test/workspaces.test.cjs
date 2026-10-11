@@ -111,11 +111,32 @@ test('migration preserves tab labels, exact IDs and safe metadata only', () => {
   assert.deepEqual(tab, {
     id,
     label: 'Auth',
+    color: null,
     checkoutRoot: root,
     conversationId: id,
     launcher: 'a'.repeat(64),
   });
   assert.equal(restoreTabs({ tabs: [{ id, checkoutRoot: '../escape' }] }, root).length, 0);
+});
+
+test('saved tab colors accept only known presets and preserve older tabs', () => {
+  const root = '/projects/example';
+  const restored = (color) =>
+    restoreTabs({ tabs: [{ id: randomUUID(), checkoutRoot: root, color }] }, root)[0].color;
+  for (const color of ['solar', 'ultraviolet', 'lagoon', 'acid', 'ember', 'iris'])
+    assert.equal(restored(color), color);
+  for (const color of [
+    undefined,
+    null,
+    '',
+    'constructor',
+    '__proto__',
+    ['iris'],
+    {},
+    'red',
+    'url(https://example.com)',
+  ])
+    assert.equal(restored(color), null);
 });
 
 test('launcher arguments remain positional and exact resume never uses worktree or continue', () => {

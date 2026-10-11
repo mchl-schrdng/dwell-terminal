@@ -2,7 +2,7 @@
 
 Dwell is a small terminal workspace for macOS on Apple Silicon. It uses your existing shell and command-line tools.
 
-This guide describes **Dwell 0.4.3**, including Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
+This guide describes **Dwell 0.5.0**, including saved tab colors, Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
 
 ## Install
 
@@ -14,7 +14,9 @@ The release is not Apple-notarized. If macOS blocks the app, use **System Settin
 
 Each terminal tab has its own shell session. Double-click a tab to rename it, or press F2 while the tab is focused. Enter saves the name; Escape cancels.
 
-Tab names, their order and your project layout are restored on relaunch. Running shell sessions are not restored. Switching tabs or resizing the workspace keeps sessions alive. Opening the same project again returns to its existing window.
+Right-click a tab to choose Solar, Ultraviolet, Lagoon, Acid, Ember or Iris. The active tab shows the full color; inactive tabs stay muted. Choose **Graphite** to remove the color. With a tab focused, **Shift+F10** opens the same palette; **Escape** dismisses it. Colors do not change Claude's status indicators.
+
+Tab names, colors, their order and your project layout are restored on relaunch. Running shell sessions are not restored. Switching tabs or resizing the workspace keeps sessions alive. Opening the same project again returns to its existing window.
 
 Restored tabs wait for **Open Terminal** or **Resume Claude**; reopening Dwell does not run commands.
 

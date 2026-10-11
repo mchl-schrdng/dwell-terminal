@@ -7,7 +7,7 @@
 <p align="center">A quiet macOS terminal, made for working with Claude Code.</p>
 
 <p align="center">
-  <a href="https://github.com/mchl-schrdng/dwell-terminal/releases/latest"><strong>Download Dwell 0.4.3 for Apple Silicon</strong></a>
+  <a href="https://github.com/mchl-schrdng/dwell-terminal/releases/latest"><strong>Download Dwell 0.5.0 for Apple Silicon</strong></a>
   &nbsp; · &nbsp;
   <a href="docs/guide.md">Getting started</a>
   &nbsp; · &nbsp;
@@ -92,7 +92,7 @@ Dwell adds no telemetry, accounts or cloud sync. Previews are read-only. Your la
 | ⌘J           | Focus the terminal                             |
 | ⌘⇧[ / ⌘⇧]    | Previous / next terminal                       |
 
-Double-click a tab to rename it. More in the [guide](docs/guide.md).
+Double-click a tab to rename it. Right-click to choose a saved gradient color or return to Graphite. More in the [guide](docs/guide.md).
 
 </details>
 

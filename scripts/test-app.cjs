@@ -1484,6 +1484,41 @@ if (cursorQuery) {
     assert(await page.getByRole('button', { name: 'Close Claude — Dwell', exact: true }).count());
     await command('printf \'RENAME_%s\\n\' "$DWELL_RENAME_TEST"');
     await until(() => hasOutput(renamedId, 'RENAME_alive'), 'rename preserves the running shell');
+    const coloredTab = page.getByRole('tab', { name: 'Claude — Dwell', exact: true });
+    const colorPicker = page.locator('#tab-colors');
+    await coloredTab.click({ button: 'right' });
+    await colorPicker.getByRole('button', { name: 'Iris', exact: true }).click();
+    assert.equal(
+      await page.locator('.terminal-tab-item.active').getAttribute('data-color'),
+      'iris',
+    );
+    await command('printf \'COLOR_%s\\n\' "$DWELL_RENAME_TEST"');
+    await until(
+      () => hasOutput(renamedId, 'COLOR_alive'),
+      'changing color preserves the running shell',
+    );
+    await coloredTab.focus();
+    await page.keyboard.press('Shift+F10');
+    assert.equal(
+      await colorPicker
+        .getByRole('button', { name: 'Iris', exact: true })
+        .getAttribute('aria-pressed'),
+      'true',
+    );
+    const inputsBeforeColorPaste = await application.evaluate(() => global.testInputs.length);
+    await menuAction('Paste', 'CmdOrCtrl+V');
+    assert.equal(
+      await application.evaluate(() => global.testInputs.length),
+      inputsBeforeColorPaste,
+      'a paste in the color picker never reaches the shell',
+    );
+    await page.keyboard.press('Escape');
+    assert(await colorPicker.isHidden());
+    await coloredTab.click({ button: 'right' });
+    await colorPicker.getByRole('button', { name: 'Graphite', exact: true }).click();
+    assert.equal(await page.locator('.terminal-tab-item.active').getAttribute('data-color'), '');
+    await coloredTab.click({ button: 'right' });
+    await colorPicker.getByRole('button', { name: 'Iris', exact: true }).click();
     await page.getByRole('tab', { name: 'Claude — Dwell', exact: true }).dblclick();
     await page.getByRole('textbox', { name: 'Terminal name' }).fill('Cancelled');
     await page.getByRole('textbox', { name: 'Terminal name' }).press('Escape');
@@ -1499,6 +1534,18 @@ if (cursorQuery) {
     await page.getByRole('tab', { selected: true }).dblclick();
     await page.getByRole('textbox', { name: 'Terminal name' }).fill('Git');
     await page.getByRole('textbox', { name: 'Terminal name' }).press('Enter');
+    const gitTabId = await activeId();
+    await coloredTab.click({ button: 'right' });
+    await colorPicker.getByRole('button', { name: 'Solar', exact: true }).click();
+    assert.equal(await activeId(), gitTabId, 'coloring a background tab does not switch terminals');
+    await page.getByRole('tab', { name: 'Git', exact: true }).click({ button: 'right' });
+    await colorPicker.getByRole('button', { name: 'Lagoon', exact: true }).click();
+    await until(
+      async () =>
+        (await savedSettings()).tabs.find((tab) => tab.id === gitTabId)?.color === 'lagoon',
+      'tab colors are saved',
+    );
+    await page.screenshot({ path: path.join(output, 'dwell-colored-tabs.png') });
     await page.screenshot({ path: path.join(output, 'dwell-renamed-tabs.png') });
     await command('exit');
     await page.waitForSelector('#restart-terminal:not([hidden])');
@@ -1524,7 +1571,13 @@ if (cursorQuery) {
     assert.equal(await page.locator('#toggle-hidden').getAttribute('aria-pressed'), 'true');
     await page.waitForFunction(() => document.querySelectorAll('[role="tab"]').length === 2);
     assert.deepEqual(await page.getByRole('tab').allTextContents(), ['Claude — Dwell', 'Git']);
-    console.log('PASS: renamed tabs and project layout restored after relaunch');
+    assert.deepEqual(
+      await page
+        .locator('.terminal-tab-item')
+        .evaluateAll((tabs) => tabs.map((tab) => tab.dataset.color)),
+      ['solar', 'lagoon'],
+    );
+    console.log('PASS: tab colors, names and project layout restored after relaunch');
     await until(
       () => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length === 2),
       'orb preference restored after relaunch',

@@ -3,6 +3,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { git } = require('./git.cjs');
 const { resolveFile } = require('./files.cjs');
+const { tabColor } = require('./tab-colors.cjs');
 
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 const cleanPath = (value) =>
@@ -131,6 +132,7 @@ function restoreTabs(settings, root) {
     .map((tab) => ({
       id: tab.id,
       label: typeof tab.label === 'string' ? tab.label.slice(0, 80) : 'Terminal',
+      color: tabColor(tab.color),
       checkoutRoot: tab.checkoutRoot,
       conversationId: UUID.test(tab.conversationId) ? tab.conversationId : null,
       launcher:

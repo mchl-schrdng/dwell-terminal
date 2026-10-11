@@ -25,7 +25,7 @@ Use the existing plain JavaScript structure. Add a dependency or abstraction onl
 - Keep context isolation and renderer sandboxing enabled. Validate every privileged IPC sender.
 - Resolve project paths and reject links outside the project. Bound preview reads; reject non-regular files. Never execute preview content.
 - Sanitize Markdown and block remote preview resources. Open only HTTP(S) web links externally.
-- Keep text opaque over plain translucent graphite. Respect reduced transparency. Do not add decorative gradients, workspace background animations or a theme picker. The optional desktop dust orb uses a small canvas animation; respect reduced motion and stop drawing when hidden.
+- Keep text opaque over plain translucent graphite. Respect reduced transparency. Optional tab color presets may use gradients; keep workspace surfaces plain, without background animations or a theme picker. The optional desktop dust orb uses a small canvas animation; respect reduced motion and stop drawing when hidden.
 - Tests use disposable projects, preferences and shell configuration. Never require credentials, third-party accounts or the developer's shell setup in CI.
 - Do not commit generated builds, caches, logs, preferences, secrets or personal paths.
 
