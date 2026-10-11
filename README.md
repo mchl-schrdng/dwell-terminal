@@ -7,7 +7,7 @@
 <p align="center">A quiet macOS terminal, made for working with Claude Code.</p>
 
 <p align="center">
-  <a href="https://github.com/mchl-schrdng/dwell-terminal/releases/latest"><strong>Download Dwell 0.4.2 for Apple Silicon</strong></a>
+  <a href="https://github.com/mchl-schrdng/dwell-terminal/releases/latest"><strong>Download Dwell 0.4.3 for Apple Silicon</strong></a>
   &nbsp; · &nbsp;
   <a href="docs/guide.md">Getting started</a>
   &nbsp; · &nbsp;

@@ -104,6 +104,25 @@ async function until(check, description, timeout = 12000) {
     );
     assert(await page.locator('#tree-pane').isHidden(), 'a new project starts without panels');
     assert(await page.locator('#preview-pane').isHidden());
+    const emptyTitlebarRegions = await page.evaluate(() => {
+      const tabs = document.querySelector('#terminal-tabs').getBoundingClientRect();
+      const lastTab = document
+        .querySelector('.terminal-tab-item:last-child')
+        .getBoundingClientRect();
+      if (tabs.right - lastTab.right < 20) throw new Error('No empty titlebar area to test');
+      return document
+        .elementsFromPoint((lastTab.right + tabs.right) / 2, tabs.top + tabs.height / 2)
+        .map((element) => getComputedStyle(element).getPropertyValue('-webkit-app-region'));
+    });
+    assert(
+      emptyTitlebarRegions.includes('drag'),
+      'empty titlebar space belongs to the native drag region',
+    );
+    assert(
+      !emptyTitlebarRegions.includes('no-drag'),
+      'the tab strip must not block dragging its empty space',
+    );
+    console.log('PASS: empty titlebar space remains draggable beside interactive tabs');
     await page.evaluate(() => {
       window.testOutput = '';
       window.testOutputs = {};
