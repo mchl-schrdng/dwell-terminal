@@ -711,11 +711,19 @@ async function until(check, description, timeout = 12000) {
     );
     console.log('PASS: tree and native file drops, quoting and no automatic submission');
 
-    const enableOrb = (checked) =>
-      application.evaluate(async ({ Menu }, checked) => {
+    const enableOrb = async (checked) => {
+      await application.evaluate(async ({ Menu }, checked) => {
         const item = Menu.getApplicationMenu().getMenuItemById('desktop-orb');
         if (item.checked !== checked) await item.click(item);
       }, checked);
+      await until(
+        () =>
+          Promise.resolve(
+            application.windows().some((window) => window.url().endsWith('/orb.html')) === checked,
+          ),
+        checked ? 'orb page becomes available' : 'orb page closes',
+      );
+    };
     const enableSound = (checked) =>
       application.evaluate(({ Menu }, checked) => {
         const item = Menu.getApplicationMenu().getMenuItemById('notification-sound');
