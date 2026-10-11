@@ -1,8 +1,8 @@
 # Dwell: isolated Claude workspaces
 
-Status: implemented locally on `codex/claude-workspaces`; automated source and packaged-app checks pass. Manual coverage and remaining limits are recorded below.
+Status: archived design and validation record, implemented in Dwell 0.4.0. See the [current guide](../guide.md#claude-workspaces) for supported behavior. Original acceptance criteria, manual coverage and remaining limits are recorded below.
 
-Prepared on 2026-10-10 against Dwell 0.3.0, commit `d40bda6`. Recheck the repository and official CLI documentation before implementation. This document defines the next feature set, not a promise about an unreleased version.
+Prepared on 2026-10-10 against Dwell 0.3.0, commit `d40bda6`. The design and handoff instructions below describe that implementation; they are not pending release work.
 
 ## 1. Product goal
 
@@ -195,13 +195,13 @@ Run `npm run format`, `npm run check`, `npm run test:app`, then package and run 
 
 A final real-Claude smoke test is required for metadata, custom launcher, worktree entry, exact resume and fullscreen links, in a disposable project and a dedicated test conversation using the configured account. Do not reuse the user's active conversations or require account-backed tests in CI. State clearly if that final check could not be performed. Never close the user's app or replace a running bundle for testing.
 
-## 10. Handoff and publication
+## 10. Original handoff and publication plan
 
 Keep this document in the implementation branch so assumptions and acceptance criteria travel with the work.
 
-Use a `codex/` branch for repository work. The only publishing identity is `mchl-schrdng`. Follow [the existing release process](../releases.md); the intended next minor version is 0.4.0 if it is still available. Update both manifests and the changelog together at release time, never rewrite old tags and never publish a binary before its checks pass.
+The implementation used a `codex/` branch and shipped in 0.4.0. The only publishing identity is `mchl-schrdng`. For subsequent releases, follow [the release process](../releases.md): update both manifests and the changelog together, never rewrite old tags and never publish a binary before its checks pass.
 
-This specification does not require immediate installation or publication. Deliver the implementation, test results and any remaining limitations for review first.
+The original handoff required the implementation, test results and remaining limitations to be reviewed before publication or installation.
 
 ## 11. Implementation notes
 

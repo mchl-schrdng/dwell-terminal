@@ -7,7 +7,7 @@
 <p align="center">A quiet macOS terminal, made for working with Claude Code.</p>
 
 <p align="center">
-  <a href="https://github.com/mchl-schrdng/dwell-terminal/releases/latest"><strong>Download Dwell 0.5.0 for Apple Silicon</strong></a>
+  <a href="https://github.com/mchl-schrdng/dwell-terminal/releases/latest"><strong>Download Dwell 0.6.0 for Apple Silicon</strong></a>
   &nbsp; · &nbsp;
   <a href="docs/guide.md">Getting started</a>
   &nbsp; · &nbsp;
@@ -73,6 +73,8 @@ Eclipse respects reduced motion. Its idle movement is decorative; a finished res
 3. **Bring Claude along.** Enable **Help → Claude Code Integration**, then start a new interactive Claude Code session. Eclipse appears by default; show or hide it with **View → Desktop Orb**.
 
 Requires an Apple Silicon Mac. Install Claude Code separately: **2.1.296+ for workspaces**, or 2.1.141+ for ordinary notifications. The release is not Apple-notarized; see the [installation guide](docs/guide.md#install) if macOS blocks it.
+
+Check for new releases with **Dwell → Check for Updates…**. Download in your browser, then replace the app when you have finished your sessions. [Updating Dwell →](docs/guide.md#update-dwell)
 
 Dwell adds no telemetry, accounts or cloud sync. Previews are read-only. Your layout comes back on relaunch; running shell sessions do not.
 

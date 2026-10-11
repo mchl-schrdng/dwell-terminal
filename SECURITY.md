@@ -10,4 +10,6 @@ The terminal is a real shell with your normal account permissions. The project b
 
 Claude integration is opt-in through the Help menu. Setup merges only Dwell-owned hooks into Claude's user settings and removal preserves other hooks. The bundled hook uses macOS tools, accepts bounded JSON and emits bounded terminal status and checkout identity sequences; it does not read transcripts, execute message contents or open a network service. Any program in a terminal can emit a bell or progress sequence, so orb states are indicators rather than trusted proof of a program's identity or success.
 
+Update checks run only from the Dwell menu. They read bounded public metadata from this repository's GitHub releases and open only the expected Apple Silicon archive URL in the user's browser. Dwell does not install or execute downloaded updates. Project paths, terminal output and preferences are not sent.
+
 This release is not Apple-notarized. Release archives include SHA-256 checksums. Dwell itself adds no telemetry or cloud services; programs launched inside it retain their own network behavior.

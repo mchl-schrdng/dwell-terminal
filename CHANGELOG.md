@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0
+
+- Check for updates from the Dwell menu and download a newer stable release in your browser. Installation stays manual; checking or downloading never interrupts terminal sessions.
+- Bound release checks, validate the official Apple Silicon archive and handle offline checks without changing preferences.
+
 ## 0.5.0
 
 - Choose one of six gradient tab colors with a right-click, or return to Graphite. Colors stay with each saved tab; inactive tabs remain subdued and Claude status indicators stay distinct.

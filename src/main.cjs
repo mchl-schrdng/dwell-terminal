@@ -20,6 +20,7 @@ const { resolveFile, listFiles, readPreview, friendlyError, quotePaths } = requi
 const { git, listChanges, readDiff } = require('./git.cjs');
 const { createAttention } = require('./attention.cjs');
 const { tabColor } = require('./tab-colors.cjs');
+const { checkForUpdates } = require('./updates.cjs');
 const {
   setClaudeIntegration,
   isClaudeIntegrationEnabled,
@@ -100,6 +101,44 @@ async function chooseFolder(parent) {
     parent.setTitle(path.basename(root) + ' — Dwell');
     send(current, 'project:opened', getProject(current));
   } else await createWindow(root);
+}
+
+async function showUpdates(item) {
+  if (!item.enabled) return;
+  item.enabled = false;
+  item.label = 'Checking for Updates…';
+  try {
+    const currentVersion = app.getVersion();
+    const update = await checkForUpdates(currentVersion);
+    if (!update) {
+      await dialog.showMessageBox({
+        type: 'info',
+        message: 'Dwell is up to date',
+        detail: `You are running Dwell ${currentVersion}.`,
+        buttons: ['OK'],
+      });
+      return;
+    }
+    const { response } = await dialog.showMessageBox({
+      type: 'info',
+      message: `Dwell ${update.version} is available`,
+      detail: `You are running Dwell ${currentVersion}. Download the update in your browser. When you have finished your terminal sessions, quit Dwell, unzip the download and replace Dwell.app in Applications. Your settings are preserved.`,
+      buttons: ['Download Update', 'Later'],
+      cancelId: 1,
+    });
+    if (response === 0) await shell.openExternal(update.url);
+  } catch {
+    await dialog.showMessageBox({
+      type: 'error',
+      message: 'Could not check or download the update',
+      detail:
+        'Check your internet connection and try again later. You can also download Dwell from the repository’s Releases page.',
+      buttons: ['OK'],
+    });
+  } finally {
+    item.label = 'Check for Updates…';
+    item.enabled = true;
+  }
 }
 
 function getProject(state) {
@@ -961,6 +1000,7 @@ app.whenReady().then(async () => {
         label: 'Dwell',
         submenu: [
           { role: 'about' },
+          { id: 'check-for-updates', label: 'Check for Updates…', click: showUpdates },
           { type: 'separator' },
           { role: 'hide' },
           { role: 'hideOthers' },
