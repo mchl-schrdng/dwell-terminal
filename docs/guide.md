@@ -2,7 +2,7 @@
 
 Dwell is a small terminal workspace for macOS on Apple Silicon. It uses your existing shell and command-line tools.
 
-This guide describes the **0.4.0 source preview**. The latest published download is **0.3.0**; Focus, worktrees, saved conversation resume, file references and the Eclipse reason card arrive in 0.4.0.
+This guide describes **Dwell 0.4.0**, including Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
 
 ## Install
 

@@ -35,7 +35,7 @@ Your shell, your projects, your way of working. Dwell brings the things you reac
 - **Context within reach.** Preview code, Markdown and images as they change. Drop a file into the terminal to insert its path.
 - **Changes in plain sight.** Review staged and unstaged Git diffs beside the conversation that created them.
 
-The **0.4.0 source preview** adds [isolated Claude worktrees](docs/guide.md#claude-workspaces), exact conversation resume, file references and a reason card for Eclipse. Workspaces require Claude Code 2.1.296+. The latest published download is still 0.3.0.
+Dwell **0.4.0** adds [isolated Claude worktrees](docs/guide.md#claude-workspaces), exact conversation resume, file references and a reason card for Eclipse. Workspaces require Claude Code 2.1.296+.
 
 It also introduces **Focus**: compact tabs, panels on demand, session search and text zoom. Your terminal keeps its space; the current checkout and Claude’s status stay within sight. [Explore Focus and its shortcuts →](docs/guide.md#terminals-and-previews)
 
