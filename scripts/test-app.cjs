@@ -752,6 +752,20 @@ async function until(check, description, timeout = 12000) {
         ),
       'orb becomes visible',
     );
+    const dragOrb = async (phase) => {
+      // Wait for the main process before changing the cursor used by its drag handler.
+      await application.evaluate(({ ipcMain }) => {
+        global.orbDragHandled = false;
+        ipcMain.once('orb:drag', () => {
+          global.orbDragHandled = true;
+        });
+      });
+      await orb.evaluate((phase) => window.orb.drag(phase), phase);
+      await until(
+        () => application.evaluate(() => global.orbDragHandled),
+        `orb handles drag ${phase}`,
+      );
+    };
     const edgePosition = await application.evaluate(({ screen, BrowserWindow }) => {
       global.originalCursorPoint = screen.getCursorScreenPoint;
       global.orbTestCursor = { x: 0, y: 0 };
@@ -765,11 +779,11 @@ async function until(check, description, timeout = 12000) {
       }).workArea;
       return [area.x + area.width - 88, area.y + area.height - 88];
     });
-    await orb.evaluate(() => window.orb.drag('start'));
+    await dragOrb('start');
     await application.evaluate(() => {
       global.orbTestCursor = { x: 10000, y: 10000 };
     });
-    await orb.evaluate(() => window.orb.drag('move'));
+    await dragOrb('move');
     await until(
       async () =>
         JSON.stringify(
@@ -781,14 +795,14 @@ async function until(check, description, timeout = 12000) {
         ) === JSON.stringify(edgePosition),
       'orb dragging stays in the display work area',
     );
-    await orb.evaluate(() => window.orb.drag('end'));
+    await dragOrb('end');
     // macOS can nudge windows at the Dock boundary when they are recreated.
     const orbPosition = edgePosition.map((coordinate) => coordinate - 32);
-    await orb.evaluate(() => window.orb.drag('start'));
+    await dragOrb('start');
     await application.evaluate(() => {
       global.orbTestCursor = { x: 9968, y: 9968 };
     });
-    await orb.evaluate(() => window.orb.drag('move'));
+    await dragOrb('move');
     await until(
       async () =>
         JSON.stringify(
@@ -800,7 +814,7 @@ async function until(check, description, timeout = 12000) {
         ) === JSON.stringify(orbPosition),
       'orb moves away from the display edge',
     );
-    await orb.evaluate(() => window.orb.drag('end'));
+    await dragOrb('end');
     await until(
       async () =>
         JSON.stringify(

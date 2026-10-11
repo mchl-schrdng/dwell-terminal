@@ -7,7 +7,7 @@
 <p align="center">A quiet macOS terminal, made for working with Claude Code.</p>
 
 <p align="center">
-  <a href="https://github.com/mchl-schrdng/dwell-terminal/releases/latest"><strong>Download for Apple Silicon</strong></a>
+  <a href="https://github.com/mchl-schrdng/dwell-terminal/releases/latest"><strong>Download Dwell 0.4.0 for Apple Silicon</strong></a>
   &nbsp; · &nbsp;
   <a href="docs/guide.md">Getting started</a>
   &nbsp; · &nbsp;
@@ -31,15 +31,15 @@
 
 Your shell, your projects, your way of working. Dwell brings the things you reach for into one quiet workspace.
 
-- **Room for every task.** Independent terminals for Claude, your server and your tests. Name a tab and keep your place.
+- **Room for every task.** Independent terminals for Claude, your server and your tests. Name a tab, then find it instantly with ⌘K.
 - **Context within reach.** Preview code, Markdown and images as they change. Drop a file into the terminal to insert its path.
 - **Changes in plain sight.** Review staged and unstaged Git diffs beside the conversation that created them.
 
-Dwell **0.4.0** adds [isolated Claude worktrees](docs/guide.md#claude-workspaces), exact conversation resume, file references and a reason card for Eclipse. Workspaces require Claude Code 2.1.296+.
+**Focus** gives your terminal the space. Compact tabs, panels on demand and text at the size you like. The current checkout and Claude’s status stay within sight. [Explore Focus →](docs/guide.md#terminals-and-previews)
 
-It also introduces **Focus**: compact tabs, panels on demand, session search and text zoom. Your terminal keeps its space; the current checkout and Claude’s status stay within sight. [Explore Focus and its shortcuts →](docs/guide.md#terminals-and-previews)
+**Claude workspaces** give parallel ideas their own files and branches. Start an isolated worktree, follow its changes, then return to the exact saved conversation with your usual launcher. Reopening Dwell restores your tabs and waits for you to resume. ⌘click a file reference to read the cited line. [Worktrees, resume and references →](docs/guide.md#claude-workspaces)
 
-![Close-up of Dwell's Git changes and terminal tabs beside its read-only code diff. See the context. Keep your place.](docs/images/readme/workspace.png)
+![Dwell's file changes, terminal and read-only code diff, presented on the same orange and copper backdrop as the desktop view. See the context. Keep your place.](docs/images/readme/workspace.png)
 
 <br>
 
@@ -53,6 +53,8 @@ A small, optional presence on your desktop. Fluid light that lets you know when 
 </picture>
 
 **Cool while working. Amber for your attention. Red for an API error.** Amber moves twice as fast. Click Eclipse to return to the terminal that needs you, drag it anywhere, or hide it when you want the desktop to yourself.
+
+Hover or focus Eclipse to see the project, checkout and reason: a permission, a question, a plan to review or a response ready to read. Its card takes you straight to that session.
 
 ### A sound that gives you space.
 
@@ -70,20 +72,25 @@ Eclipse respects reduced motion. Its idle movement is decorative; a finished res
 2. **Open a project.** Choose **Open Folder**. Your existing shell and command-line tools are ready to use.
 3. **Bring Claude along.** Enable **Help → Claude Code Integration**, then start a new interactive Claude Code session. Show Eclipse with **View → Desktop Orb**.
 
-Requires an Apple Silicon Mac. Claude integration requires Claude Code 2.1.141 or later, installed separately. The release is not Apple-notarized; see the [installation guide](docs/guide.md#install) if macOS blocks it.
+Requires an Apple Silicon Mac. Install Claude Code separately: **2.1.296+ for workspaces**, or 2.1.141+ for ordinary notifications. The release is not Apple-notarized; see the [installation guide](docs/guide.md#install) if macOS blocks it.
 
 Dwell adds no telemetry, accounts or cloud sync. Previews are read-only. Your layout comes back on relaunch; running shell sessions do not.
 
 <details>
 <summary><strong>A few shortcuts worth knowing</strong></summary>
 
-| Shortcut  | Action                   |
-| --------- | ------------------------ |
-| ⌘T / ⌘W   | Open / close a terminal  |
-| ⌘O        | Open a folder            |
-| ⌘B / ⌘⇧P  | Toggle files / preview   |
-| ⌘J        | Focus the terminal       |
-| ⌘⇧[ / ⌘⇧] | Previous / next terminal |
+| Shortcut     | Action                                         |
+| ------------ | ---------------------------------------------- |
+| ⌘T / ⌘W      | Open / close a terminal                        |
+| ⌘O           | Open a folder                                  |
+| ⌘B / ⌘⇧P     | Toggle files / preview                         |
+| ⌘⇧F          | Toggle Focus Mode                              |
+| ⌘K           | Find a session                                 |
+| ⌘⌥A          | Next unread alert                              |
+| ⌘⇧L          | Open a file reference                          |
+| ⌘+ / ⌘− / ⌘0 | Increase / decrease / reset terminal text size |
+| ⌘J           | Focus the terminal                             |
+| ⌘⇧[ / ⌘⇧]    | Previous / next terminal                       |
 
 Double-click a tab to rename it. More in the [guide](docs/guide.md).
 
