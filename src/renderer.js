@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import { $, node, icon, refreshIcons } from './ui.js';
 import { renderCode, renderMarkdown, renderDiff } from './preview.js';
 import { references } from './references.cjs';
+import { TAB_COLORS, tabColor } from './tab-colors.cjs';
 
 const api = window.dwell;
 let project;
@@ -46,7 +47,11 @@ function save() {
           ...settings,
           expanded: [...expanded],
           selected,
-          tabs: [...sessions.values()].map((session) => ({ id: session.id, label: session.label })),
+          tabs: [...sessions.values()].map((session) => ({
+            id: session.id,
+            label: session.label,
+            color: session.color,
+          })),
         })
         .catch(report),
     180,
@@ -480,6 +485,7 @@ function updateSession(session) {
     session.context?.branch,
     state.reason,
     'Double-click to rename',
+    'Right-click for color',
   ]
     .filter(Boolean)
     .join(' · ');
@@ -689,6 +695,47 @@ function renameTerminal(session) {
   input.select();
 }
 
+let colorSession;
+const colorPicker = $('#tab-colors');
+for (const [color, preset] of Object.entries({ ...TAB_COLORS, '': { label: 'Graphite' } })) {
+  const button = node('button', 'tab-color-choice');
+  button.type = 'button';
+  button.dataset.color = color;
+  button.style.setProperty('--tab-gradient', preset.gradient || 'none');
+  const swatch = node('span', 'tab-color-swatch');
+  swatch.setAttribute('aria-hidden', 'true');
+  button.append(swatch, node('span', '', preset.label));
+  button.addEventListener('click', () => {
+    if (sessions.has(colorSession?.id)) {
+      colorSession.color = color || null;
+      paintTab(colorSession);
+      save();
+    }
+    colorPicker.hidePopover();
+    activeSession?.terminal.focus();
+  });
+  $('#tab-color-options').append(button);
+}
+
+function paintTab(session) {
+  session.tabItem.dataset.color = session.color || '';
+  session.tabItem.style.setProperty(
+    '--tab-gradient',
+    TAB_COLORS[session.color]?.gradient || 'none',
+  );
+}
+
+function showTabColors(session) {
+  colorSession = session;
+  for (const button of $('#tab-color-options').children)
+    button.setAttribute('aria-pressed', String(button.dataset.color === (session.color || '')));
+  colorPicker.showPopover({ source: session.tab });
+  const anchor = session.tabItem.getBoundingClientRect();
+  colorPicker.style.left = `${Math.max(8, Math.min(anchor.left, innerWidth - colorPicker.offsetWidth - 8))}px`;
+  colorPicker.style.top = `${Math.max(8, Math.min(anchor.bottom + 6, innerHeight - colorPicker.offsetHeight - 8))}px`;
+  colorPicker.querySelector('[aria-pressed="true"]').focus();
+}
+
 async function createTerminal(savedLabel, options = {}) {
   if (!project?.root) return;
   if (sessions.size >= 32) {
@@ -765,6 +812,7 @@ async function createTerminal(savedLabel, options = {}) {
     tab,
     tabItem,
     label,
+    color: tabColor(context.color),
     closeButton,
     starting: false,
     running: false,
@@ -774,6 +822,7 @@ async function createTerminal(savedLabel, options = {}) {
     restored: Boolean(options.saved),
   };
   sessions.set(id, session);
+  paintTab(session);
   updateSession(session);
   term.loadAddon(fit);
   term.loadAddon(new WebLinksAddon((_event, url) => api.openLink(url).catch(report)));
@@ -830,10 +879,21 @@ async function createTerminal(savedLabel, options = {}) {
   });
   tab.addEventListener('click', () => activateSession(session));
   tab.addEventListener('dblclick', () => renameTerminal(session));
+  tab.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    // Chromium dismisses a new popover on the mouse-up that ends a right-click.
+    if (event.buttons)
+      document.addEventListener('pointerup', () => showTabColors(session), { once: true });
+    else showTabColors(session);
+  });
   tab.addEventListener('keydown', (event) => {
     if (event.key === 'F2') {
       event.preventDefault();
       renameTerminal(session);
+    }
+    if ((event.shiftKey && event.key === 'F10') || event.key === 'ContextMenu') {
+      event.preventDefault();
+      showTabColors(session);
     }
   });
   closeButton.addEventListener('click', () => closeSession(session).catch(report));
@@ -1065,6 +1125,7 @@ async function closeSession(session) {
     const items = [...sessions.values()];
     const index = items.indexOf(session);
     sessions.delete(session.id);
+    if (colorSession === session) colorPicker.hidePopover();
     session.terminal.dispose();
     session.pane.remove();
     session.tabItem.remove();
@@ -1190,7 +1251,8 @@ async function action(name) {
     const text = nameInput
       ? nameInput.value.slice(nameInput.selectionStart, nameInput.selectionEnd)
       : window.getSelection()?.toString() ||
-        (!document.querySelector('dialog[open]') && activeSession?.terminal.getSelection());
+        (!document.querySelector('dialog[open], :popover-open') &&
+          activeSession?.terminal.getSelection());
     if (text) await api.copy(text);
     return;
   }
@@ -1213,17 +1275,17 @@ async function action(name) {
       }
       return;
     }
-    if (document.querySelector('dialog[open]')) return;
+    if (document.querySelector('dialog[open], :popover-open')) return;
     const target = activeSession;
     if (target) {
       target.terminal.focus();
       const text = await api.paste();
-      if (sessions.has(target.id) && !document.querySelector('dialog[open]'))
+      if (sessions.has(target.id) && !document.querySelector('dialog[open], :popover-open'))
         target.terminal.paste(text);
     }
     return;
   }
-  if (!settings || document.querySelector('dialog[open]')) return;
+  if (!settings || document.querySelector('dialog[open], :popover-open')) return;
   if (name === 'focus') {
     focusMode = !focusMode;
     layout();
