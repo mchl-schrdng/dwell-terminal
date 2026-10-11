@@ -8,6 +8,10 @@ function createAttention(windows, preferences, savePreferences) {
   let drag;
   let lastSound = 0;
   let cardAnchor;
+  let workspaceWindow;
+  let orbDisplay;
+  const displayEvents = ['display-added', 'display-removed', 'display-metrics-changed'];
+  const displaysChanged = () => reposition();
   const reasons = {
     approval: 'Approval requested',
     question: 'Question',
@@ -194,17 +198,51 @@ function createAttention(windows, preferences, savePreferences) {
     signal(state, id, label, 'attention', false);
   }
 
-  function position(x, y) {
-    const area = screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) }).workArea;
+  function position(
+    x,
+    y,
+    area = screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) }).workArea,
+  ) {
     return {
       x: Math.round(Math.max(area.x, Math.min(area.x + area.width - 88, x))),
       y: Math.round(Math.max(area.y, Math.min(area.y + area.height - 88, y))),
     };
   }
 
+  function reposition(window) {
+    if (window) workspaceWindow = window;
+    if (!orb || orb.isDestroyed()) return;
+    if (!workspaceWindow || workspaceWindow.isDestroyed())
+      workspaceWindow = [...windows.values()].at(-1)?.window;
+    const display = workspaceWindow
+      ? screen.getDisplayMatching(workspaceWindow.getBounds())
+      : screen.getPrimaryDisplay();
+    const area = display.workArea;
+    const layout = [display.id, area.x, area.y, area.width, area.height].join(':');
+    if (layout === orbDisplay) return;
+    orbDisplay = layout;
+    drag = null;
+    showCard(false);
+    const saved = preferences.orbPosition;
+    // Old absolute coordinates cannot identify the screen they belonged to.
+    const restore =
+      saved?.displayId === display.id &&
+      Number.isFinite(saved.right) &&
+      saved.right >= 0 &&
+      Number.isFinite(saved.bottom) &&
+      saved.bottom >= 0;
+    const point = position(
+      area.x + area.width - 88 - (restore ? saved.right : 24),
+      area.y + area.height - 88 - (restore ? saved.bottom : 24),
+      area,
+    );
+    orb.setPosition(point.x, point.y);
+  }
+
   function destroyOrb() {
     drag = null;
     cardAnchor = null;
+    orbDisplay = null;
     if (!orb) return;
     const previous = orb;
     orb = null;
@@ -221,14 +259,7 @@ function createAttention(windows, preferences, savePreferences) {
       return;
     }
     if (orb) return;
-    const area = screen.getPrimaryDisplay().workArea;
-    const saved = preferences.orbPosition;
-    const point =
-      saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)
-        ? position(saved.x, saved.y)
-        : position(area.x + area.width - 112, area.y + area.height - 112);
     const window = new BrowserWindow({
-      ...point,
       width: 88,
       height: 88,
       title: 'Dwell Desktop Orb',
@@ -251,6 +282,8 @@ function createAttention(windows, preferences, savePreferences) {
       },
     });
     orb = window;
+    reposition();
+    for (const event of displayEvents) screen.on(event, displaysChanged);
     window.setAlwaysOnTop(true, 'floating');
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -261,6 +294,7 @@ function createAttention(windows, preferences, savePreferences) {
       ),
     );
     window.on('closed', () => {
+      for (const event of displayEvents) screen.removeListener(event, displaysChanged);
       if (orb === window) orb = null;
     });
     window.on('hide', () => showCard(false));
@@ -340,12 +374,18 @@ function createAttention(windows, preferences, savePreferences) {
     }
     if (phase === 'end' && drag) {
       const [x, y] = orb.getPosition();
-      preferences.orbPosition = { x, y };
+      const display = screen.getDisplayMatching(orb.getBounds());
+      const area = display.workArea;
+      preferences.orbPosition = {
+        displayId: display.id,
+        right: area.x + area.width - 88 - x,
+        bottom: area.y + area.height - 88 - y,
+      };
       drag = null;
       savePreferences();
     }
   });
-  return { bell, progress, interrupt, acknowledge, clear, setEnabled, destroyOrb };
+  return { bell, progress, interrupt, acknowledge, clear, setEnabled, destroyOrb, reposition };
 }
 
 module.exports = { createAttention };

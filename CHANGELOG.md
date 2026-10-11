@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2
+
+- Keep Eclipse on the active Dwell window’s screen and reanchor it when displays or their work areas change.
+- Save manual placement relative to screen edges; reset legacy absolute coordinates to the bottom-right corner instead of stranding the orb on a larger display.
+- Cover external displays, resolution changes, unplugging, saved placement and hover/drag cleanup with regression tests.
+
 ## 0.4.1
 
 - Show Eclipse by default on first launch. Hiding it remains available, and a saved choice to disable it is preserved.
