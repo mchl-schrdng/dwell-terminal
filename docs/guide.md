@@ -2,13 +2,19 @@
 
 Dwell is a small terminal workspace for macOS on Apple Silicon. It uses your existing shell and command-line tools.
 
-This guide describes **Dwell 0.5.0**, including saved tab colors, Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
+This guide describes **Dwell 0.6.0**, including update checks, saved tab colors, Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
 
 ## Install
 
 [Download the latest release](https://github.com/mchl-schrdng/dwell-terminal/releases/latest), unzip it, and move **Dwell.app** to Applications. Open Dwell and choose **Open Folder**.
 
 The release is not Apple-notarized. If macOS blocks the app, use **System Settings → Privacy & Security → Open Anyway** after trying to open it. Only do this for the release you downloaded from this repository.
+
+### Update Dwell
+
+Choose **Dwell → Check for Updates…**. Dwell checks the latest stable GitHub release only when you ask. If a newer version is available, **Download Update** opens its official Apple Silicon ZIP in your browser; **Later** leaves everything as it is.
+
+When you have finished your terminal sessions, quit Dwell, unzip the download and replace **Dwell.app** in Applications. Reopen Dwell. Your settings and saved tabs are kept, but running shell processes stop when you quit. Checking or downloading an update never quits the app or installs anything automatically.
 
 ## Terminals and previews
 
@@ -109,6 +115,6 @@ A finished response is not proof that all work succeeded. Abrupt process crashes
 
 ## Privacy
 
-Dwell adds no telemetry, accounts or cloud sync. Tools you run inside the terminal, including Claude Code, use their own accounts and network connections.
+Dwell adds no telemetry, accounts or cloud sync. A manual update check contacts GitHub for public release metadata; downloading opens the official archive in your browser. Project paths, terminal output and preferences are not sent. Tools you run inside the terminal, including Claude Code, use their own accounts and network connections.
 
 [Back to Dwell](../README.md)

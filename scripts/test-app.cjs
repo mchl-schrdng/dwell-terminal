@@ -139,6 +139,121 @@ async function until(check, description, timeout = 12000) {
       'real terminal output',
     );
     console.log('PASS: real PTY and keyboard input');
+    const updates = await application.evaluate(async ({ app, Menu, dialog, shell }) => {
+      const item = Menu.getApplicationMenu().getMenuItemById('check-for-updates');
+      const original = {
+        fetch: global.fetch,
+        dialog: dialog.showMessageBox,
+        open: shell.openExternal,
+      };
+      const dialogs = [];
+      const downloads = [];
+      const settled = async () => {
+        const deadline = Date.now() + 5000;
+        while (!item.enabled) {
+          if (Date.now() > deadline) throw new Error('Update menu did not become ready');
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      };
+      let requests = 0;
+      let response = 0;
+      const version = app.getVersion().split('.').map(Number);
+      version[2]++;
+      const next = version.join('.');
+      const url = `https://github.com/mchl-schrdng/dwell-terminal/releases/download/v${next}/Dwell-${next}-macos-arm64.zip`;
+      const release = {
+        tag_name: `v${next}`,
+        draft: false,
+        prerelease: false,
+        assets: [
+          {
+            name: `Dwell-${next}-macos-arm64.zip`,
+            state: 'uploaded',
+            size: 1,
+            browser_download_url: url,
+          },
+        ],
+      };
+      try {
+        dialog.showMessageBox = async (options) => {
+          dialogs.push(options);
+          return { response };
+        };
+        shell.openExternal = async (link) => {
+          downloads.push(link);
+        };
+        let finish;
+        global.fetch = () => {
+          requests++;
+          return new Promise((resolve) => {
+            finish = resolve;
+          });
+        };
+        item.click();
+        const busy = { enabled: item.enabled, label: item.label };
+        item.click();
+        finish(Response.json(release));
+        await settled();
+        const requestsWhileBusy = requests;
+        global.fetch = async () => Response.json(release);
+        response = 1;
+        item.click();
+        await settled();
+        release.tag_name = `v${app.getVersion()}`;
+        item.click();
+        await settled();
+        global.fetch = async () => {
+          throw new Error('offline');
+        };
+        item.click();
+        await settled();
+        global.fetch = async () => Response.json({ ...release, tag_name: `v${next}` });
+        response = 0;
+        shell.openExternal = async () => {
+          throw new Error('browser unavailable');
+        };
+        item.click();
+        await settled();
+        return {
+          dialogs,
+          downloads,
+          url,
+          busy,
+          requestsWhileBusy,
+          ready: item.enabled,
+          label: item.label,
+        };
+      } finally {
+        global.fetch = original.fetch;
+        dialog.showMessageBox = original.dialog;
+        shell.openExternal = original.open;
+      }
+    });
+    assert.deepEqual(updates.busy, { enabled: false, label: 'Checking for Updates…' });
+    assert.equal(updates.requestsWhileBusy, 1, 'duplicate checks must not run in parallel');
+    assert.deepEqual(
+      updates.downloads,
+      [updates.url],
+      'only Download Update opens the official ZIP',
+    );
+    assert.equal(updates.dialogs.length, 6);
+    assert.deepEqual(updates.dialogs[0].buttons, ['Download Update', 'Later']);
+    assert.match(updates.dialogs[0].detail, /quit Dwell, unzip the download and replace Dwell.app/);
+    assert.equal(updates.dialogs[2].message, 'Dwell is up to date');
+    assert.equal(updates.dialogs[3].type, 'error');
+    assert.equal(updates.dialogs[5].type, 'error');
+    assert.equal(updates.ready, true, 'the menu recovers after network or browser failure');
+    assert.equal(updates.label, 'Check for Updates…');
+    await page.locator('.xterm-helper-textarea').focus();
+    await page.keyboard.type("printf 'UPDATE_%s\\n' 'SESSION_ALIVE'");
+    await page.keyboard.press('Enter');
+    await until(
+      () => page.evaluate(() => window.testOutput.includes('UPDATE_SESSION_ALIVE')),
+      'terminal survives manual update checks and downloads',
+    );
+    console.log(
+      'PASS: update menu handles newer/current/offline releases, cancellation and browser errors without interrupting the PTY',
+    );
     await page.evaluate(() => {
       const data = new DataTransfer();
       data.setData('text/plain', "printf 'PASTE_%s\\n' 'café ✓'\nprintf 'SECOND_%s\\n' 'LINE'");
