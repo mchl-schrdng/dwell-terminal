@@ -235,7 +235,15 @@ async function until(check, description, timeout = 12000) {
       await page.evaluate((text) => window.dwell.copy(text), pasteUrl);
       assert.equal(await application.evaluate(({ clipboard }) => clipboard.readText()), pasteUrl);
       for (const mode of ['menu', 'keyboard']) {
-        await command(`read -r pasted; printf '${mode}_URL=<%s>\\n' "$pasted"`);
+        await command(
+          `printf 'PASTE_%s\\n' '${mode}_READY'; read -r pasted; printf '${mode}_URL=<%s>\\n' "$pasted"`,
+        );
+        // Wait until xterm has parsed the shell's bracketed-paste reset before pasting.
+        await page.waitForFunction(
+          (mode) =>
+            document.querySelector('.xterm-rows').textContent.includes(`PASTE_${mode}_READY`),
+          mode,
+        );
         const outputStart = await page.evaluate(() => window.testOutput.length);
         if (mode === 'menu') {
           await page.locator('#new-terminal').focus();
