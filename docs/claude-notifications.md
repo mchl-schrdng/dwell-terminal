@@ -30,6 +30,8 @@ Source: [Claude's official hook reference](https://code.claude.com/docs/en/hooks
 
 ## Attention and sound
 
+Eclipse is enabled by default when no visibility preference is saved. Use **View → Desktop Orb** to hide it; a saved choice to disable it is preserved. Claude integration remains opt-in through **Help → Claude Code Integration**.
+
 Structured events change the orb even when the terminal is visible. Only background alerts create unread markers or play a sound. Focus, an orb click or submitting input acknowledges an alert without declaring the work complete. Working resumes when Claude reports it. Red alerts take priority over amber; unread alerts win within the same priority. The orb opens the session displayed on its card.
 
 Repeated events in the same state stay silent, including after acknowledgement. Sounds are separated by at least 1.5 seconds. The bundled 1.05-second stereo chime is generated from original oscillators and a quiet echo; its reproducible source is `scripts/generate-orb-sound.cjs`. **View → Notification Sound** mutes it.

@@ -2,7 +2,7 @@
 
 Dwell is a small terminal workspace for macOS on Apple Silicon. It uses your existing shell and command-line tools.
 
-This guide describes **Dwell 0.4.0**, including Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
+This guide describes **Dwell 0.4.1**, including Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
 
 ## Install
 
@@ -89,7 +89,7 @@ Dwell installs a small set of official Claude hooks while preserving your other 
 
 ## Eclipse and sound
 
-Enable **View → Desktop Orb** to show Eclipse, the optional desktop companion.
+Eclipse appears by default on first launch. Use **View → Desktop Orb** to show or hide it. Dwell remembers your choice, including an existing choice to keep it disabled.
 
 - **Cool:** gentle motion while Claude works. The movement at rest is decorative.
 - **Amber:** Claude needs input or has finished a response. The motion is twice as fast.

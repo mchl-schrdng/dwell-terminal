@@ -733,9 +733,17 @@ async function until(check, description, timeout = 12000) {
     });
     assert.equal(
       await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length),
-      1,
+      2,
+      'a fresh profile opens the terminal and desktop orb',
     );
-    await enableOrb(true);
+    assert.equal(
+      await application.evaluate(
+        ({ Menu }) => Menu.getApplicationMenu().getMenuItemById('desktop-orb').checked,
+      ),
+      true,
+      'desktop orb is enabled by default',
+    );
+    console.log('PASS: desktop orb is enabled on first launch');
     await until(
       () =>
         Promise.resolve(application.windows().some((window) => window.url().endsWith('/orb.html'))),
@@ -1453,6 +1461,29 @@ if (cursorQuery) {
       'restored orb can be disabled',
     );
     console.log('PASS: desktop orb preference persists');
+    await application.close();
+    application = null;
+    application = await electron.launch({
+      executablePath,
+      args: executablePath ? [] : [root],
+      env,
+      timeout: 30000,
+    });
+    page = await application.firstWindow();
+    await page.waitForSelector('[role="tab"]');
+    assert.equal(
+      await application.evaluate(
+        ({ Menu }) => Menu.getApplicationMenu().getMenuItemById('desktop-orb').checked,
+      ),
+      false,
+      'an explicit opt-out survives relaunch',
+    );
+    assert.equal(
+      await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length),
+      1,
+      'a disabled orb is not recreated',
+    );
+    console.log('PASS: a saved desktop orb opt-out overrides the default');
     await application.evaluate(({ app }) => app.exit(0));
     application = null;
   } catch (error) {
