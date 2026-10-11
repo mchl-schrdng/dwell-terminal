@@ -180,6 +180,11 @@ async function createWindow(root) {
   );
   window.webContents.session.setPermissionCheckHandler(() => false);
   window.on('ready-to-show', () => window.show());
+  window.on('focus', () => attention.reposition(window));
+  for (const event of ['move', 'resize'])
+    window.on(event, () => {
+      if (window.isFocused()) attention.reposition(window);
+    });
   window.on('close', (event) => {
     const count = [...state.sessions.values()].filter((session) => session.process).length;
     if (!count || state.closing) return;
@@ -209,6 +214,7 @@ async function createWindow(root) {
     stopTerminals(state);
     windows.delete(windowId);
     if (!windows.size) attention.destroyOrb();
+    else attention.reposition();
   });
   // A crashed renderer must not leave an invisible terminal process running.
   window.webContents.on('render-process-gone', () => stopTerminals(state));

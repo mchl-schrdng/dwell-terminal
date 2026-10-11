@@ -60,6 +60,12 @@ function fixture() {
     getPosition() {
       return [this.bounds.x, this.bounds.y];
     }
+    getBounds() {
+      return this.bounds;
+    }
+    setPosition(x, y) {
+      Object.assign(this.bounds, { x, y });
+    }
     setBounds(bounds) {
       this.bounds = bounds;
     }
@@ -84,6 +90,17 @@ function fixture() {
     }
   }
   const area = { x: 0, y: 0, width: 1440, height: 900 };
+  const displays = [{ id: 1, workArea: area }];
+  const screen = new EventEmitter();
+  screen.getPrimaryDisplay = () => displays[0];
+  screen.getCursorScreenPoint = () => screen.cursor;
+  screen.getDisplayNearestPoint = ({ x, y }) => {
+    const distance = ({ workArea: a }) =>
+      Math.hypot(Math.max(a.x - x, 0, x - a.x - a.width), Math.max(a.y - y, 0, y - a.y - a.height));
+    return displays.toSorted((a, b) => distance(a) - distance(b))[0];
+  };
+  screen.getDisplayMatching = ({ x, y, width = 0, height = 0 }) =>
+    screen.getDisplayNearestPoint({ x: x + width / 2, y: y + height / 2 });
   const dependencies = {
     electron: {
       BrowserWindow: Window,
@@ -91,10 +108,7 @@ function fixture() {
       ipcMain,
       app,
       Menu: { getApplicationMenu: () => null },
-      screen: {
-        getPrimaryDisplay: () => ({ workArea: area }),
-        getDisplayNearestPoint: () => ({ workArea: area }),
-      },
+      screen,
     },
     'node:path': path,
     'node:child_process': {
@@ -131,6 +145,8 @@ function fixture() {
     notifications,
     sounds,
     app,
+    screen,
+    displays,
     advance: (ms) => (now += ms),
     terminalEvents() {
       return state.window.messages
@@ -163,8 +179,101 @@ function fixture() {
       const sender = this.orb().webContents;
       ipcMain.emit('orb:card', { sender, senderFrame: sender.mainFrame }, visible);
     },
+    drag(phase, cursor = { x: 0, y: 0 }) {
+      screen.cursor = cursor;
+      const sender = this.orb().webContents;
+      ipcMain.emit('orb:drag', { sender, senderFrame: sender.mainFrame }, phase);
+    },
   };
 }
+
+test('the orb starts on the workspace display and follows it between screens', async () => {
+  const f = fixture();
+  f.displays.push({ id: 2, workArea: { x: 1440, y: 25, width: 2560, height: 1390 } });
+  f.state.window.setBounds({ x: 1600, y: 100, width: 1000, height: 800 });
+  f.preferences.orbPosition = { x: 950, y: 740 };
+  await f.enable();
+  assert.deepEqual(f.orb().getPosition(), [3888, 1303], 'legacy coordinates cannot strand the orb');
+  f.state.window.setPosition(100, 100);
+  f.attention.reposition(f.state.window);
+  assert.deepEqual(f.orb().getPosition(), [1328, 788]);
+  f.attention.reposition(f.state.window);
+  assert.deepEqual(f.orb().getPosition(), [1328, 788]);
+});
+
+test('display changes keep the default orb at the corner, including negative origins and unplugging', async () => {
+  const f = fixture();
+  await f.enable();
+  assert.deepEqual(f.orb().getPosition(), [1328, 788]);
+  f.displays[0].workArea = { x: 0, y: 25, width: 2560, height: 1390 };
+  f.screen.emit('display-metrics-changed', {}, f.displays[0], ['workArea', 'scaleFactor']);
+  assert.deepEqual(f.orb().getPosition(), [2448, 1303]);
+  const external = { id: 2, workArea: { x: -1920, y: -1080, width: 1920, height: 1040 } };
+  f.displays.push(external);
+  f.state.window.setPosition(-1500, -800);
+  f.screen.emit('display-added', {}, external);
+  assert.deepEqual(f.orb().getPosition(), [-112, -152]);
+  f.displays.pop();
+  f.screen.emit('display-removed', {}, external);
+  assert.deepEqual(f.orb().getPosition(), [2448, 1303], 'an unplugged screen cannot hide the orb');
+});
+
+test('manual placement survives reopening and resolution changes as offsets from the edges', async () => {
+  const f = fixture();
+  await f.enable();
+  f.drag('start');
+  f.drag('move', { x: -40, y: -60 });
+  f.drag('end');
+  assert.deepEqual(f.orb().getPosition(), [1288, 728]);
+  f.attention.reposition(f.state.window);
+  assert.deepEqual(
+    f.orb().getPosition(),
+    [1288, 728],
+    'ordinary window activity preserves dragging',
+  );
+  await f.attention.setEnabled(false);
+  await f.enable();
+  assert.deepEqual(f.orb().getPosition(), [1288, 728]);
+  f.displays[0].workArea = { x: 0, y: 25, width: 2560, height: 1390 };
+  f.screen.emit('display-metrics-changed');
+  assert.deepEqual(f.orb().getPosition(), [2408, 1243]);
+  f.preferences.orbPosition.right = 5000;
+  f.preferences.orbPosition.bottom = 5000;
+  f.displays[0].workArea = { x: 0, y: 25, width: 1024, height: 700 };
+  f.screen.emit('display-metrics-changed');
+  assert.deepEqual(f.orb().getPosition(), [0, 25], 'saved offsets stay inside smaller work areas');
+});
+
+test('repositioning closes the hover card, cancels stale dragging and stops listening when disabled', async () => {
+  const f = fixture();
+  await f.enable();
+  f.attention.progress(f.state, f.first, 4, 'Claude');
+  f.card(true);
+  assert.equal(f.orb().bounds.width, 354);
+  f.displays[0].workArea = { x: 0, y: 25, width: 1920, height: 1000 };
+  f.screen.emit('display-metrics-changed');
+  assert.equal(f.orb().bounds.width, 88);
+  assert.deepEqual(f.orb().getPosition(), [1808, 913]);
+  f.card(false);
+  assert.deepEqual(
+    f.orb().getPosition(),
+    [1808, 913],
+    'a late hover event cannot restore the old position',
+  );
+  f.drag('start');
+  f.displays[0].workArea = { x: 0, y: 25, width: 1440, height: 800 };
+  f.screen.emit('display-metrics-changed');
+  f.drag('move', { x: -400, y: -400 });
+  f.drag('end');
+  assert.deepEqual(f.orb().getPosition(), [1328, 713]);
+  assert.equal(f.preferences.orbPosition, undefined);
+  for (let count = 0; count < 3; count++) {
+    await f.attention.setEnabled(false);
+    assert.equal(f.screen.listenerCount('display-metrics-changed'), 0);
+    await f.enable();
+    assert.equal(f.screen.listenerCount('display-metrics-changed'), 1);
+  }
+});
 
 test('working survives acknowledgement; foreground alerts stay visible without sound', async () => {
   const f = fixture();

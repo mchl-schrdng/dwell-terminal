@@ -768,6 +768,50 @@ async function until(check, description, timeout = 12000) {
         ),
       'orb becomes visible',
     );
+    const corner = await application.evaluate(({ screen, BrowserWindow }) => {
+      const workspace = BrowserWindow.getAllWindows().find(
+        (window) => window.webContents.getURL() === 'dwell://app/index.html',
+      );
+      const area = screen.getDisplayMatching(workspace.getBounds()).workArea;
+      return [area.x + area.width - 112, area.y + area.height - 112];
+    });
+    const orbLocation = () =>
+      application.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()
+          .find((window) => window.getTitle() === 'Dwell Desktop Orb')
+          .getPosition(),
+      );
+    assert.deepEqual(await orbLocation(), corner, 'the orb starts in the workspace screen corner');
+    await application.evaluate(({ screen }) => {
+      global.originalDisplayMatching = screen.getDisplayMatching;
+      screen.getDisplayMatching = (bounds) => {
+        const display = global.originalDisplayMatching(bounds);
+        return {
+          ...display,
+          workArea: {
+            ...display.workArea,
+            width: display.workArea.width - 64,
+            height: display.workArea.height - 64,
+          },
+        };
+      };
+      screen.emit('display-metrics-changed', {}, screen.getPrimaryDisplay(), ['workArea']);
+    });
+    await until(
+      async () =>
+        JSON.stringify(await orbLocation()) === JSON.stringify(corner.map((value) => value - 64)),
+      'orb reanchors after display metrics change',
+    );
+    await orb.screenshot({ path: path.join(output, 'orb-display-change.png') });
+    await application.evaluate(({ screen }) => {
+      screen.getDisplayMatching = global.originalDisplayMatching;
+      screen.emit('display-metrics-changed', {}, screen.getPrimaryDisplay(), ['workArea']);
+    });
+    await until(
+      async () => JSON.stringify(await orbLocation()) === JSON.stringify(corner),
+      'orb returns to the restored screen corner',
+    );
+    console.log('PASS: desktop orb follows display work area changes');
     const dragOrb = async (phase) => {
       // Wait for the main process before changing the cursor used by its drag handler.
       await application.evaluate(({ ipcMain }) => {
@@ -831,11 +875,25 @@ async function until(check, description, timeout = 12000) {
       'orb moves away from the display edge',
     );
     await dragOrb('end');
+    const orbPlacement = () =>
+      application.evaluate(({ screen, BrowserWindow }) => {
+        const bounds = BrowserWindow.getAllWindows()
+          .find((window) => window.getTitle() === 'Dwell Desktop Orb')
+          .getBounds();
+        const display = screen.getDisplayMatching(bounds);
+        const area = display.workArea;
+        return {
+          displayId: display.id,
+          right: area.x + area.width - bounds.width - bounds.x,
+          bottom: area.y + area.height - bounds.height - bounds.y,
+        };
+      });
+    const savedOrbPlacement = await orbPlacement();
     await until(
       async () =>
         JSON.stringify(
           JSON.parse(await fs.readFile(path.join(profile, 'preferences.json'), 'utf8')).orbPosition,
-        ) === JSON.stringify({ x: orbPosition[0], y: orbPosition[1] }),
+        ) === JSON.stringify(savedOrbPlacement),
       'orb position is saved',
     );
     await application.evaluate(({ screen }) => {
@@ -1444,15 +1502,14 @@ if (cursorQuery) {
       () => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length === 2),
       'orb preference restored after relaunch',
     );
-    assert.deepEqual(
-      await application.evaluate(({ BrowserWindow }) =>
-        BrowserWindow.getAllWindows()
-          .find((window) => window.getTitle() === 'Dwell Desktop Orb')
-          .getPosition(),
-      ),
-      orbPosition,
-      'orb position survives relaunch',
-    );
+    // Work-area edges can change between launches; preserve the saved offsets.
+    await until(
+      async () => JSON.stringify(await orbPlacement()) === JSON.stringify(savedOrbPlacement),
+      'orb offsets survive relaunch',
+    ).catch(async (error) => {
+      console.error('Orb placement:', { saved: savedOrbPlacement, actual: await orbPlacement() });
+      throw error;
+    });
     assert.equal(
       await application.evaluate(
         ({ Menu }) => Menu.getApplicationMenu().getMenuItemById('notification-sound').checked,

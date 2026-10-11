@@ -2,7 +2,7 @@
 
 Dwell is a small terminal workspace for macOS on Apple Silicon. It uses your existing shell and command-line tools.
 
-This guide describes **Dwell 0.4.1**, including Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
+This guide describes **Dwell 0.4.2**, including Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
 
 ## Install
 
@@ -95,7 +95,7 @@ Eclipse appears by default on first launch. Use **View → Desktop Orb** to show
 - **Amber:** Claude needs input or has finished a response. The motion is twice as fast.
 - **Red:** an API error interrupted the response. A failed tool that Claude can recover from does not trigger a red alert.
 
-Click Eclipse to return to the most urgent terminal, drag it to move, or right-click to hide. It remembers its position, respects reduced motion and has a static fallback without WebGL.
+Click Eclipse to return to the most urgent terminal, drag it to move, or right-click to hide. It follows the active Dwell window’s screen, resting in the bottom-right corner by default. Manual placement is saved relative to that screen’s edges, so changing resolution keeps it within reach. It respects reduced motion and has a static fallback without WebGL.
 
 Hover or focus Eclipse to see the current project, checkout/tab and reason: **Approval requested**, **Question**, **Plan to review**, **Response ready**, **Response interrupted**, or **Needs attention**. The card opens that same session. It contains no conversation text or tool inputs; refining a reason does not play another chime.
 
