@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- Show Eclipse by default on first launch. Hiding it remains available, and a saved choice to disable it is preserved.
+- Verify first-launch visibility and the saved opt-out on macOS; synchronize drag tests with the main process.
+
 ## 0.4.0
 
 - Give the terminal a compact shared title and tab bar, with panels closed for new projects and a temporary Focus Mode that preserves saved layouts.

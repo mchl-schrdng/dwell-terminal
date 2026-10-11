@@ -47,10 +47,10 @@ protocol.registerSchemesAsPrivileged([
 ]);
 const windows = new Map();
 const reservedWorktrees = new Set();
-let preferences = { projects: {} };
+let preferences = { projects: {}, desktopOrb: true };
 const preferencesPath = path.join(app.getPath('userData'), 'preferences.json');
 try {
-  preferences = { projects: {}, ...JSON.parse(fs.readFileSync(preferencesPath, 'utf8')) };
+  preferences = { ...preferences, ...JSON.parse(fs.readFileSync(preferencesPath, 'utf8')) };
 } catch {}
 const attention = createAttention(windows, preferences, savePreferences);
 const launcherKey = (definition = preferences.claudeLauncher) =>
