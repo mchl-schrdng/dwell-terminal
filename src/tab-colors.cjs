@@ -1,13 +1,13 @@
 const TAB_COLORS = {
-  solar: { label: 'Solar', gradient: 'linear-gradient(118deg, #672465, #dc3b3b 47%, #ffad38)' },
+  solar: { label: 'Solar', gradient: 'linear-gradient(118deg, #c2a06b, #e0c28c)' },
   ultraviolet: {
     label: 'Ultraviolet',
-    gradient: 'linear-gradient(118deg, #3330a6, #9746e7 52%, #f058b7)',
+    gradient: 'linear-gradient(118deg, #8f75c2, #bba1df)',
   },
-  lagoon: { label: 'Lagoon', gradient: 'linear-gradient(118deg, #25327b, #227bc8 50%, #4ee0ca)' },
-  acid: { label: 'Acid', gradient: 'linear-gradient(118deg, #165354, #68a91e 53%, #e7f566)' },
-  ember: { label: 'Ember', gradient: 'linear-gradient(118deg, #682946, #c75b61 50%, #f5ba8c)' },
-  iris: { label: 'Iris', gradient: 'linear-gradient(118deg, #4358ba, #aa88d3 52%, #f1bfd5)' },
+  lagoon: { label: 'Lagoon', gradient: 'linear-gradient(118deg, #4d79c4, #87a9df)' },
+  acid: { label: 'Acid', gradient: 'linear-gradient(118deg, #5c9b90, #8db9a4)' },
+  ember: { label: 'Ember', gradient: 'linear-gradient(118deg, #c78f75, #e3b49a)' },
+  iris: { label: 'Iris', gradient: 'linear-gradient(118deg, #8493c5, #b2bae0)' },
 };
 const tabColor = (value) =>
   typeof value === 'string' && Object.hasOwn(TAB_COLORS, value) ? value : null;

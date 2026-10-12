@@ -1261,49 +1261,98 @@ async function until(check, description, timeout = 12000) {
       hookRunner,
       String.raw`
 const { spawnSync } = require('node:child_process');
-const { events, cursorQuery } = JSON.parse(process.argv[2]);
-for (const event of events) {
-  const result = spawnSync('/bin/sh', [process.env.DWELL_CLAUDE_HOOK], {
-    input: JSON.stringify(event), encoding: 'utf8',
+let input = '';
+let cursorReply;
+function emit({ events = [], cursorQuery, raw = '', number, exit = false }) {
+  for (const event of events) {
+    const result = spawnSync('/bin/sh', [process.env.DWELL_CLAUDE_HOOK], {
+      input: JSON.stringify(event), encoding: 'utf8',
+    });
+    if (result.status !== 0) throw new Error('Hook failed: ' + result.stderr);
+    if (event.hook_event_name === 'UserPromptSubmit' && !result.stdout.trim())
+      throw new Error('Hook returned no sequence');
+    if (result.stdout.trim()) process.stdout.write(JSON.parse(result.stdout).terminalSequence);
+    if (event.hook_event_name === 'SessionEnd') exit = true;
+  }
+  if (raw) process.stdout.write(raw);
+  const done = () => process.stdout.write('\r\nDWELL_HOOK_' + number + '\r\n', () => {
+    if (exit) process.exit(0);
   });
-  if (result.status !== 0) throw new Error('Hook failed: ' + result.stderr);
-  if (event.hook_event_name === 'UserPromptSubmit' && !result.stdout.trim())
-    throw new Error('Hook returned no sequence: ' + JSON.stringify({
-      TERM_PROGRAM: process.env.TERM_PROGRAM,
-      DWELL_CLAUDE_HOOK: process.env.DWELL_CLAUDE_HOOK,
-      noncePresent: Boolean(process.env.DWELL_CLAUDE_NONCE),
-      stderr: result.stderr,
-    }));
-  if (result.stdout.trim()) process.stdout.write(JSON.parse(result.stdout).terminalSequence);
+  if (cursorQuery) {
+    const timeout = setTimeout(() => { throw new Error('No cursor-position reply'); }, 2000);
+    cursorReply = () => {
+      clearTimeout(timeout);
+      cursorReply = null;
+      done();
+    };
+    process.stdout.write('\x1b[6n');
+  } else done();
 }
-const done = () => process.stdout.write('\r\nDWELL_HOOK_' + process.argv[3] + '\r\n');
-if (cursorQuery) {
-  process.stdin.setRawMode(true);
-  let reply = '';
-  const timeout = setTimeout(() => { throw new Error('No cursor-position reply'); }, 2000);
-  process.stdin.on('data', (data) => {
-    reply += data;
-    if (!/\x1b\[\d+;\d+R/.test(reply)) return;
-    clearTimeout(timeout);
-    process.stdin.setRawMode(false);
-    process.stdin.pause();
-    done();
-  });
-  process.stdout.write('\x1b[6n');
-} else done();
+process.stdin.setRawMode(true);
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (data) => {
+  if (data.includes('\x03')) {
+    process.stdout.write('\r\nDWELL_HOOK_INTERRUPTED_' + process.argv[2] + '\r\n', () => process.exit(0));
+    return;
+  }
+  input += data;
+  if (cursorReply) {
+    const response = input.match(/\x1b\[\d+;\d+R/);
+    if (!response) return;
+    input = input.replace(response[0], '');
+    cursorReply();
+  }
+  while (!cursorReply && /[\r\n]/.test(input)) {
+    const end = input.search(/[\r\n]/);
+    const line = input.slice(0, end);
+    input = input.slice(end + 1);
+    if (line) emit(JSON.parse(line));
+  }
+});
+process.stdout.write('\r\nDWELL_HOOK_READY_' + process.argv[2] + '\r\n');
 `,
     );
     const claudeOrb = application.windows().find((window) => window.url().endsWith('/orb.html'));
     await claudeOrb.waitForSelector('#orb');
     const orbStatus = () => claudeOrb.locator('#orb').getAttribute('data-status');
     let hookNumber = 0;
-    const emitHook = async (id, events, cursorQuery = false) => {
+    const hookRunners = new Map();
+    const startHookRunner = async (id, replaceShell = false) => {
+      if (hookRunners.has(id)) return;
       const number = ++hookNumber;
-      const argument = JSON.stringify({ events, cursorQuery }).replaceAll("'", "'\\''");
-      const text = `${quotePaths([process.execPath, hookRunner])}'${argument}' ${number}`;
+      const text = `${replaceShell ? 'exec ' : ''}${quotePaths([process.execPath, hookRunner])}${number}`;
+      await page.evaluate(({ id, text }) => window.dwell.input(id, text + '\r'), { id, text });
+      await until(
+        () => hasOutput(id, `DWELL_HOOK_READY_${number}`),
+        'interactive hook fixture starts',
+      );
+      hookRunners.set(id, number);
+    };
+    const shellAfterHook = (id, marker) =>
+      until(
+        () =>
+          page.evaluate(
+            ({ id, marker }) => {
+              const output = window.testOutputs[id] || '';
+              const markerIndex = output.lastIndexOf(marker);
+              return markerIndex >= 0 && output.lastIndexOf('DWELL_TEST_READY> ') > markerIndex;
+            },
+            { id, marker },
+          ),
+        'shell resumes after the interactive hook fixture exits',
+      );
+    const sendHook = async (id, request) => {
+      await startHookRunner(id);
+      const number = ++hookNumber;
+      const text = JSON.stringify({ ...request, number });
       await page.evaluate(({ id, text }) => window.dwell.input(id, text + '\r'), { id, text });
       await until(() => hasOutput(id, `DWELL_HOOK_${number}`), 'hook output reaches the real PTY');
+      if (request.events?.some((event) => event.hook_event_name === 'SessionEnd')) {
+        hookRunners.delete(id);
+        await shellAfterHook(id, `DWELL_HOOK_${number}`);
+      }
     };
+    const emitHook = (id, events, cursorQuery = false) => sendHook(id, { events, cursorQuery });
     await emitHook(firstId, [{ hook_event_name: 'UserPromptSubmit' }]);
     await until(async () => (await orbStatus()) === 'working', 'Claude reports working');
     await page.evaluate((id) => window.dwell.active(id), firstId);
@@ -1327,12 +1376,14 @@ if (cursorQuery) {
     assert.equal(await claudeOrb.locator('#orb-count').textContent(), '0');
     await emitHook(firstId, [{ hook_event_name: 'PostToolUseFailure', error: 'recoverable' }]);
     await until(async () => (await orbStatus()) === 'working', 'tool failure remains recoverable');
-    await command("printf '\\033]9;4;2;101\\a'; printf 'OSC_%s\\n' 'IGNORED'");
+    await sendHook(firstId, { raw: '\x1b]9;4;2;101\x07OSC_IGNORED\r\n' });
     await until(() => hasOutput(firstId, 'OSC_IGNORED'), 'malformed OSC is processed');
     assert.equal(await orbStatus(), 'working');
     await activeInput().focus();
     await page.keyboard.press('Control+c');
     await until(async () => (await orbStatus()) === 'idle', 'Ctrl+C resets interrupted work');
+    await shellAfterHook(firstId, `DWELL_HOOK_INTERRUPTED_${hookRunners.get(firstId)}`);
+    hookRunners.delete(firstId);
 
     await page.locator('#new-terminal').click();
     await until(
@@ -1340,6 +1391,7 @@ if (cursorQuery) {
       'second Claude terminal opens',
     );
     const claudeSecondId = await activeId();
+    await startHookRunner(claudeSecondId, true);
     await emitHook(claudeSecondId, [{ hook_event_name: 'UserPromptSubmit' }]);
     await emitHook(firstId, [{ hook_event_name: 'PermissionRequest' }], true);
     await until(
@@ -1367,7 +1419,7 @@ if (cursorQuery) {
     );
     await claudeOrb.locator('#orb').click();
     await until(async () => (await activeId()) === firstId, 'generic BEL returns to its terminal');
-    await page.evaluate((id) => window.dwell.input(id, 'exit\r'), claudeSecondId);
+    await sendHook(claudeSecondId, { exit: true });
     await until(
       async () => (await orbStatus()) === 'idle',
       'shell exit removes stale working state',

@@ -300,6 +300,226 @@ test('working survives acknowledgement; foreground alerts stay visible without s
   assert.equal(f.sounds.length, 0);
 });
 
+test('a foreground terminal bell changes the orb quietly and can be acknowledged', async () => {
+  const f = fixture();
+  await f.enable();
+  f.state.window.focus();
+  f.attention.bell(f.state, f.first, 'Shell');
+  assert.equal(f.status().status, 'attention');
+  assert.equal(f.status().count, 0);
+  assert.equal(f.sounds.length, 0);
+  f.attention.acknowledge(f.state, f.first);
+  assert.equal(f.status().status, 'idle');
+});
+
+test('a background bell after a quiet foreground alert becomes unread and sounds once', async () => {
+  const f = fixture();
+  await f.enable();
+  f.state.window.focus();
+  for (const native of [false, true]) {
+    f.attention.clear(f.state, f.first);
+    f.state.activeSession = f.first;
+    if (native) {
+      f.attention.program(f.state, f.first, { state: 'done', id: '' });
+      f.attention.prompt(f.state, f.first);
+    } else f.attention.bell(f.state, f.first, 'Shell');
+    assert.equal(f.status().count, 0);
+    const sounds = f.sounds.length;
+    f.state.activeSession = f.second;
+    f.advance(2000);
+    f.attention.bell(f.state, f.first, 'Shell');
+    assert.equal(f.status().count, 1);
+    assert.equal(f.sounds.length, sounds + 1);
+    f.attention.bell(f.state, f.first, 'Shell');
+    assert.equal(f.sounds.length, sounds + 1, 'repeated unread bells stay grouped');
+  }
+});
+
+test('native program states aggregate descendants and clear only the requested subtree', async () => {
+  const f = fixture();
+  await f.enable();
+  const send = (state, id = '', kind) => f.attention.program(f.state, f.first, { state, id, kind });
+  send('working');
+  assert.equal(f.status().status, 'working');
+  send('blocked', 'tools/edit', 'permission');
+  assert.equal(f.status().reason, 'Approval requested');
+  send('done', 'tools/build');
+  assert.equal(f.status().reason, 'Approval requested');
+  send('error', 'tools/edit/child');
+  assert.equal(f.status().status, 'error');
+  send('clear', 'tools/edit');
+  assert.equal(f.status().reason, 'Response ready');
+  send('blocked', 'tools/editor', 'question');
+  send('clear', 'tools/edit');
+  assert.equal(
+    f.status().reason,
+    'Question',
+    'clearing a subtree preserves similarly named siblings',
+  );
+  send('blocked', 'tools/editor', 'auth');
+  assert.equal(f.status().reason, 'Sign-in required');
+  send('clear', 'tools');
+  assert.equal(f.status().status, 'working');
+  send('clear');
+  assert.equal(f.status().status, 'idle');
+  assert.equal(f.status().count, 0);
+});
+
+test('native reports own an episode while legacy progress and bells remain fallbacks', async () => {
+  const f = fixture();
+  await f.enable();
+  f.attention.progress(f.state, f.first, 2, 'Old hook');
+  f.attention.program(f.state, f.first, { state: 'working', id: '' });
+  assert.equal(f.status().status, 'working', 'native state replaces a stale legacy error');
+  f.attention.program(f.state, f.first, { state: 'blocked', id: '', kind: 'permission' });
+  f.advance(2000);
+  const sounds = f.sounds.length;
+  for (const value of [0, 2, 3, 4]) f.attention.progress(f.state, f.first, value, 'Delayed hook');
+  f.attention.interrupt(f.state, f.first);
+  f.attention.bell(f.state, f.first, 'Delayed bell');
+  assert.equal(f.status().reason, 'Approval requested');
+  assert.equal(f.sounds.length, sounds);
+  f.attention.program(f.state, f.first, { state: 'clear', id: '' });
+  f.attention.progress(f.state, f.first, 4, 'Delayed hook');
+  f.attention.bell(f.state, f.first, 'Delayed bell');
+  assert.equal(f.status().status, 'idle', 'native clear retains ownership until the episode ends');
+  assert.equal(f.attention.needsShellCheck(f.state, f.first), true);
+  f.attention.reset(f.state, f.first);
+  assert.equal(f.attention.needsShellCheck(f.state, f.first), false);
+  f.attention.bell(f.state, f.first, 'Shell');
+  assert.equal(f.status().status, 'attention');
+  assert.equal(f.sounds.length, sounds + 1);
+});
+
+test('a cleared native permission request cannot leave its reason on an unrelated blocker', async () => {
+  const f = fixture();
+  await f.enable();
+  f.attention.program(f.state, f.first, { state: 'blocked', id: 'permission', kind: 'permission' });
+  f.attention.program(f.state, f.first, { state: 'blocked', id: 'other' });
+  assert.equal(f.status().reason, 'Approval requested');
+  const sounds = f.sounds.length;
+  f.attention.program(f.state, f.first, { state: 'clear', id: 'permission' });
+  assert.equal(f.status().reason, 'Needs attention');
+  assert.equal(f.terminalEvents().at(-1).reason, 'Needs attention');
+  assert.equal(f.sounds.length, sounds, 'changing the selected reason does not repeat a sound');
+});
+
+test('a blocked terminal takes priority over a completed response in another terminal', async () => {
+  const f = fixture();
+  await f.enable();
+  f.attention.program(f.state, f.first, { state: 'done', id: '' });
+  f.attention.program(f.state, f.second, { state: 'blocked', id: '', kind: 'question' });
+  assert.equal(f.status().reason, 'Question');
+  assert.equal(f.status().target, `${f.state.window.webContents.id}:${f.second}`);
+  assert.equal(f.status().count, 2);
+  f.open();
+  assert.equal(
+    f.state.window.messages.filter(({ channel }) => channel === 'terminal:focus').at(-1).value,
+    f.second,
+  );
+  assert.equal(f.status().reason, 'Response ready');
+  assert.equal(f.status().count, 1, 'the earlier finished response remains unread');
+});
+
+test('native records evict the least recently updated entry at capacity without starving new alerts', async () => {
+  const f = fixture();
+  await f.enable();
+  for (let index = 0; index < 64; index++)
+    f.attention.program(f.state, f.first, {
+      state: index === 1 ? 'done' : 'working',
+      id: `task/${index}`,
+    });
+  f.attention.program(f.state, f.first, { state: 'error', id: 'task/0' });
+  assert.equal(f.status().status, 'error', 'an existing record can still change at capacity');
+  f.attention.program(f.state, f.first, { state: 'blocked', id: 'overflow', kind: 'permission' });
+  assert.equal(f.status().status, 'error', 'the recently updated error is retained');
+  f.attention.program(f.state, f.first, { state: 'clear', id: 'task/0' });
+  assert.equal(f.status().reason, 'Approval requested', 'the new blocker is accepted at capacity');
+  f.attention.program(f.state, f.first, { state: 'clear', id: 'overflow' });
+  assert.equal(f.status().status, 'working', 'the oldest completed record was evicted');
+  f.attention.program(f.state, f.first, { state: 'clear', id: 'task' });
+  f.attention.program(f.state, f.first, { state: 'blocked', id: 'new', kind: 'question' });
+  assert.equal(f.status().reason, 'Question');
+});
+
+test('a confirmed shell expires live states, retains completion and restores ordinary bells', async () => {
+  const f = fixture();
+  await f.enable();
+  for (const state of ['idle', 'working', 'blocked']) {
+    f.attention.program(f.state, f.first, { state, id: '' });
+    assert.equal(f.attention.needsShellCheck(f.state, f.first), true);
+    f.attention.prompt(f.state, f.first);
+    assert.equal(f.status().status, 'idle');
+    assert.equal(f.attention.needsShellCheck(f.state, f.first), false);
+  }
+  f.attention.program(f.state, f.first, { state: 'blocked', id: '', kind: 'permission' });
+  f.attention.program(f.state, f.first, { state: 'done', id: 'child' });
+  f.attention.prompt(f.state, f.first);
+  assert.equal(f.status().reason, 'Response ready', 'a finished child survives an expired blocker');
+  assert.equal(f.attention.needsShellCheck(f.state, f.first), false);
+  f.attention.acknowledge(f.state, f.first);
+  f.advance(2000);
+  const sounds = f.sounds.length;
+  f.attention.bell(f.state, f.first, 'Shell');
+  assert.equal(f.status().count, 1);
+  assert.equal(f.sounds.length, sounds + 1);
+  f.attention.clear(f.state, f.first);
+  f.attention.progress(f.state, f.first, 3, 'Hook without SessionEnd');
+  f.attention.prompt(f.state, f.first);
+  assert.equal(f.status().status, 'idle', 'shell confirmation also clears stale legacy state');
+});
+
+test('PTY exit retains native completion and errors but clears unfinished and legacy states', async () => {
+  const f = fixture();
+  await f.enable();
+  const session = f.state.sessions.get(f.first);
+  for (const [native, expected] of [
+    ['done', 'attention'],
+    ['error', 'error'],
+    ['working', 'idle'],
+  ]) {
+    session.process = {};
+    f.attention.reset(f.state, f.first);
+    f.attention.program(f.state, f.first, { state: native, id: '' });
+    session.process = null;
+    f.attention.finish(f.state, f.first);
+    assert.equal(f.status().status, expected);
+    assert.equal(f.terminalEvents().at(-1).status, expected);
+    f.attention.program(f.state, f.first, { state: 'working', id: '' });
+    assert.equal(f.status().status, expected, 'late reports cannot revive an exited PTY');
+  }
+  session.process = {};
+  f.attention.progress(f.state, f.first, 2, 'Legacy');
+  session.process = null;
+  f.attention.finish(f.state, f.first);
+  assert.equal(f.status().status, 'idle');
+});
+
+test('native notifications use each tab’s project and route identical terminal IDs across windows', async () => {
+  const f = fixture();
+  f.state.sessions.get(f.first).checkoutRoot = '/projects/current-project';
+  f.attention.program(f.state, f.first, { state: 'done', id: '' });
+  assert.equal(f.notifications[0].body, 'current-project · Terminal');
+  await f.enable();
+  assert.equal(f.status().project, 'current-project');
+  const other = f.addWindow();
+  other.sessions.set(f.first, {
+    process: {},
+    label: 'Review',
+    checkoutRoot: '/projects/second-project',
+  });
+  f.attention.program(other, f.first, { state: 'error', id: '' });
+  assert.equal(f.status().project, 'second-project');
+  assert.equal(f.status().label, 'second-project · Review');
+  assert.equal(f.status().count, 2);
+  const target = f.status().target;
+  f.open(undefined, target);
+  assert.equal(other.window.isFocused(), true);
+  assert.equal(f.state.window.isFocused(), false);
+  assert.equal(f.status().count, 1);
+  assert.equal(f.status().project, 'current-project');
+});
+
 test('the orb opens the highest priority terminal and preserves the other session', async () => {
   const f = fixture();
   await f.enable();
@@ -329,7 +549,7 @@ test('an unread request wins over a visible request of equal severity', async ()
   const f = fixture();
   await f.enable();
   f.state.window.focus();
-  f.attention.progress(f.state, f.first, 4, 'Visible', 'response');
+  f.attention.progress(f.state, f.first, 4, 'Visible', 'question');
   f.attention.progress(f.state, f.second, 4, 'Waiting', 'approval');
   assert.equal(f.status().count, 1);
   assert.equal(f.status().reason, 'Approval requested');

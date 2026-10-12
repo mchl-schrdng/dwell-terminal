@@ -850,6 +850,18 @@ async function createTerminal(savedLabel, options = {}) {
     if (domEvent.key === 'Enter') api.active(id);
   });
   term.onBell(() => api.bell(id, session.label));
+  term.parser.registerOscHandler(7501, async (data) => {
+    await api.programStatus(id, data).catch(report);
+    return true;
+  });
+  term.parser.registerOscHandler(133, (data) => {
+    if (data === 'A' || data.startsWith('A;')) api.statusBoundary(id, 'prompt');
+    return false;
+  });
+  term.parser.registerEscHandler({ final: 'c' }, () => {
+    api.statusBoundary(id, 'reset');
+    return false;
+  });
   term.parser.registerOscHandler(9, (data) => {
     if (!/^4;[0-4](?:;(?:100|[0-9]{1,2}))?$/.test(data)) return false;
     api.progress(id, Number(data[2]), session.label);

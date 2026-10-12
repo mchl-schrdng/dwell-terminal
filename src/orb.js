@@ -6,7 +6,7 @@ let status = 'idle';
 let time = 18;
 let warmth = 0;
 let failure = 0;
-let speed = 0.8;
+let speed = 0.45;
 let lastFrame = 0;
 let frame;
 let scene;
@@ -91,7 +91,8 @@ function draw(delta) {
   const blend = reducedMotion.matches ? 1 : 1 - Math.exp(-delta * 3.5);
   warmth += (Number(status === 'attention') - warmth) * blend;
   failure += (Number(status === 'error') - failure) * blend;
-  const targetSpeed = status === 'attention' ? 1.6 : status === 'error' ? 0.42 : 0.8;
+  const targetSpeed =
+    status === 'attention' ? 1.6 : status === 'error' ? 0.42 : status === 'working' ? 0.8 : 0.45;
   speed += (targetSpeed - speed) * blend;
   if (!reducedMotion.matches) time += delta * speed;
   scene.gl.uniform1f(scene.time, time);
@@ -189,7 +190,7 @@ window.orb.onState((state) => {
   const badge = document.querySelector('#orb-count');
   badge.hidden = count < 2;
   badge.textContent = count;
-  const subject = label || 'Claude';
+  const subject = label || 'Terminal';
   const suffix = count ? ` (${count})` : '';
   const title =
     status === 'error'
@@ -197,7 +198,7 @@ window.orb.onState((state) => {
       : status === 'attention'
         ? `${subject} needs attention${suffix}`
         : status === 'working'
-          ? 'Claude is working · Open Dwell'
+          ? `${subject} is working · Open Dwell`
           : 'Open Dwell';
   button.setAttribute('aria-label', `${title} · ${state.reason || ''}`);
   button.title = `${title} · Drag to move · Right-click to hide`;

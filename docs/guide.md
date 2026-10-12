@@ -2,7 +2,7 @@
 
 Dwell is a small terminal workspace for macOS on Apple Silicon. It uses your existing shell and command-line tools.
 
-This guide describes **Dwell 0.7.0**, including independent tab contexts, folder following, update checks, saved tab colors, Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
+This guide describes **Dwell 0.8.0**, including native Claude notifications, independent tab contexts, folder following, update checks, Line tab colors, Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
 
 ## Install
 
@@ -20,7 +20,7 @@ When you have finished your terminal sessions, quit Dwell, unzip the download an
 
 Each terminal tab has its own shell session. Double-click a tab to rename it, or press F2 while the tab is focused. Enter saves the name; Escape cancels.
 
-Right-click a tab to choose Solar, Ultraviolet, Lagoon, Acid, Ember or Iris. The active tab shows the full color; inactive tabs stay muted. Choose **Graphite** to remove the color. With a tab focused, **Shift+F10** opens the same palette; **Escape** dismisses it. Colors do not change Claude's status indicators.
+Right-click a tab to choose Solar, Ultraviolet, Lagoon, Acid, Ember or Iris. A thin gradient line marks the color above a plain graphite surface. The active tab has a brighter line, a lighter graphite fill and a visible border; inactive tabs stay muted. Choose **Graphite** to remove the line. With a tab focused, **Shift+F10** opens the same palette; **Escape** dismisses it. Existing saved colors are kept. Colors do not change Claude's status indicators.
 
 Tab names, colors, their order and your project layout are restored on relaunch. Running shell sessions are not restored. Switching tabs or resizing the workspace keeps sessions alive. Opening the same project again returns to its existing window.
 
@@ -95,23 +95,23 @@ Up to 32 files can be dropped from Finder at once. Paths containing control char
 
 ## Connect Claude Code
 
-Install Claude Code separately, then enable **Help → Claude Code Integration** in Dwell. Start a new interactive Claude Code session, version 2.1.141 or later.
+Install Claude Code separately and start an interactive session, version **2.1.295 or later**, in any Dwell terminal. Native status reaches Eclipse without enabling hooks or changing `preferredNotifChannel`. Dwell keeps your usual launcher. All its windows and tabs share one orb.
 
-Dwell installs a small set of official Claude hooks while preserving your other settings and hooks. They only run inside Dwell. Use the same menu to remove them. No extra package, daemon or conversation reader is needed.
+For worktrees, saved conversation context or hook notifications on older supported Claude versions, enable **Help → Claude Code Integration**. Dwell installs official Claude hooks while preserving your other settings and hooks. They only run inside Dwell. Use the same menu to remove them. No extra package, daemon or conversation reader is needed. See [compatibility and troubleshooting](claude-notifications.md).
 
 ## Eclipse and sound
 
 Eclipse appears by default on first launch. Use **View → Desktop Orb** to show or hide it. Dwell remembers your choice, including an existing choice to keep it disabled.
 
-- **Cool:** gentle motion while Claude works. The movement at rest is decorative.
-- **Amber:** Claude needs input or has finished a response. The motion is twice as fast.
-- **Red:** an API error interrupted the response. A failed tool that Claude can recover from does not trigger a red alert.
+- **Cool:** more movement while a program works; a slow decorative movement at rest.
+- **Amber:** a program needs input or has finished a response. The motion is faster.
+- **Red:** a program reports a stopped error. A failed tool that Claude can recover from does not trigger a red alert.
 
 Click Eclipse to return to the most urgent terminal, drag it to move, or right-click to hide. It follows the active Dwell window’s screen, resting in the bottom-right corner by default. Manual placement is saved relative to that screen’s edges, so changing resolution keeps it within reach. It respects reduced motion and has a static fallback without WebGL.
 
 In another app's full-screen Space, macOS may hide Eclipse. Dwell keeps its normal Dock icon and menu bar.
 
-Hover or focus Eclipse to see the current project, checkout/tab and reason: **Approval requested**, **Question**, **Plan to review**, **Response ready**, **Response interrupted**, or **Needs attention**. The card opens that same session. It contains no conversation text or tool inputs; refining a reason does not play another chime.
+Hover or focus Eclipse to see the current project, checkout/tab and reason: **Approval requested**, **Question**, **Sign-in required**, **Response ready**, **Response interrupted**, or **Needs attention**. Hook-only sessions can also identify a **Plan to review**. The card opens that same session. It contains no conversation text or tool inputs; refining a reason does not play another chime.
 
 Reading an alert clears its unread marker; further work or a new prompt updates its state. Background alerts play an original spatial chime. Toggle **View → Notification Sound** to mute or enable it. Foreground alerts remain silent.
 

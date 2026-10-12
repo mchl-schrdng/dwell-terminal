@@ -19,6 +19,7 @@ const pty = require('node-pty');
 const { resolveFile, listFiles, readPreview, friendlyError, quotePaths } = require('./files.cjs');
 const { git, listChanges, readDiff } = require('./git.cjs');
 const { createAttention } = require('./attention.cjs');
+const { parseProgramStatus, PROGRAM_STATUS_REPLY } = require('./program-status.cjs');
 const { tabColor } = require('./tab-colors.cjs');
 const { checkForUpdates } = require('./updates.cjs');
 const { foregroundDirectory, shellDirectory } = require('./shell-directory.cjs');
@@ -78,6 +79,7 @@ function send(state, channel, value) {
 function stopTerminals(state) {
   attention.clear(state);
   for (const session of state.sessions.values()) {
+    clearTimeout(session.directoryTimer);
     try {
       session.process?.kill();
     } catch {}
@@ -250,7 +252,6 @@ async function createWindow(root) {
       });
   });
   window.on('closed', () => {
-    clearTimeout(state.directoryTimer);
     clearTimeout(state.watchTimer);
     for (const watcher of state.watchers.values()) watcher.close();
     stopTerminals(state);
@@ -264,37 +265,47 @@ async function createWindow(root) {
   return window;
 }
 
-function scheduleDirectory(state) {
-  if (state.window.isDestroyed()) return;
-  if (state.directoryChecking) {
-    state.directoryPending = true;
+function scheduleDirectory(state, session = state.sessions.get(state.activeSession)) {
+  if (!session || state.window.isDestroyed() || state.sessions.get(session.id) !== session) return;
+  if (session.directoryChecking) {
+    session.directoryPending = true;
     return;
   }
-  if (state.directoryTimer) return;
-  state.directoryTimer = setTimeout(() => {
-    state.directoryTimer = null;
-    pollDirectory(state);
+  if (session.directoryTimer) return;
+  session.directoryTimer = setTimeout(() => {
+    session.directoryTimer = null;
+    pollDirectory(state, session);
   }, 500);
 }
 
-async function pollDirectory(state) {
-  state.directoryChecking = true;
-  state.directoryPending = false;
-  const session = state.sessions.get(state.activeSession);
+async function pollDirectory(state, session) {
+  session.directoryChecking = true;
+  session.directoryPending = false;
   const processHandle = session?.process;
   const revision = session?.revision;
-  const claudeSequence = session?.claudeSequence;
+  const activitySequence = session?.activitySequence;
   try {
     if (!processHandle || session.unconfirmed || session.launching) return;
     const directory = await shellDirectory(processHandle.pid, process.env.SHELL || '/bin/zsh');
-    if (!directory || (directory === session.cwd && !session.claudeLive)) return;
+    if (!directory) return;
+    if (
+      state.window.isDestroyed() ||
+      state.sessions.get(session.id) !== session ||
+      session.process !== processHandle ||
+      session.activitySequence !== activitySequence ||
+      session.revision !== revision
+    )
+      return;
+    attention.prompt(state, session.id);
+    if (state.activeSession !== session.id) return;
+    if (directory === session.cwd && !session.claudeLive) return;
     const info = await followDirectory(session.checkoutRoot, directory);
     if (
       state.window.isDestroyed() ||
       state.sessions.get(session.id) !== session ||
       state.activeSession !== session.id ||
       session.process !== processHandle ||
-      session.claudeSequence !== claudeSequence ||
+      session.activitySequence !== activitySequence ||
       session.revision !== revision
     )
       return;
@@ -314,8 +325,8 @@ async function pollDirectory(state) {
   } catch {
     // A busy or disappearing process must not replace the last validated context.
   } finally {
-    state.directoryChecking = false;
-    if (state.directoryPending) scheduleDirectory(state);
+    session.directoryChecking = false;
+    if (session.directoryPending) scheduleDirectory(state, session);
   }
 }
 
@@ -776,6 +787,7 @@ handle('terminal:start', async (state, id, cols, rows, mode = 'shell', task) => 
     session.nonce = randomUUID();
     session.closedConversations.clear();
     session.claudeLive = false;
+    attention.clear(state, id);
     env.DWELL_CLAUDE_NONCE = session.nonce;
     ensureOpen();
     const processHandle = pty.spawn(command.file, command.args, {
@@ -794,7 +806,8 @@ handle('terminal:start', async (state, id, cols, rows, mode = 'shell', task) => 
     contextChanged(state, session);
     processHandle.onData((data) => {
       if (state.sessions.get(id) !== session || session.process !== processHandle) return;
-      if (state.activeSession === id) scheduleDirectory(state);
+      if (state.activeSession === id || attention.needsShellCheck(state, id))
+        scheduleDirectory(state, session);
       session.pendingBytes += data.length;
       send(state, 'terminal:data', { id, data });
       if (session.pendingBytes > 512 * 1024 && !session.paused) {
@@ -804,17 +817,23 @@ handle('terminal:start', async (state, id, cols, rows, mode = 'shell', task) => 
     });
     processHandle.onExit(({ exitCode }) => {
       if (session.process !== processHandle) return;
-      session.process = null;
-      session.cwd = null;
-      session.claudeLive = false;
-      session.nonce = null;
-      if (session.worktree) reservedWorktrees.delete(session.worktree.name);
-      if (session.status === 'starting') session.status = 'unavailable';
-      if (state.sessions.get(id) === session) {
-        attention.clear(state, id);
-        contextChanged(state, session);
-        send(state, 'terminal:exit', { id, exitCode });
-      }
+      // Drain parsed output before allowing a restart: final status belongs to this PTY.
+      session.finishExit = () => {
+        session.finishExit = null;
+        if (session.process !== processHandle) return;
+        session.process = null;
+        session.cwd = null;
+        session.claudeLive = false;
+        session.nonce = null;
+        if (session.worktree) reservedWorktrees.delete(session.worktree.name);
+        if (session.status === 'starting') session.status = 'unavailable';
+        if (state.sessions.get(id) === session) {
+          contextChanged(state, session);
+          send(state, 'terminal:exit', { id, exitCode });
+          attention.finish(state, id);
+        }
+      };
+      if (!session.pendingBytes) session.finishExit();
     });
     return {
       shell: mode === 'shell' || mode === 'recover' ? path.basename(loginShell) : 'Claude',
@@ -850,12 +869,12 @@ handle('terminal:claude', async (state, id, data) => {
   )
     return null;
   // Claude's ordered hook takes precedence over a shell observation already in flight.
-  session.claudeSequence = (session.claudeSequence || 0) + 1;
+  session.activitySequence = (session.activitySequence || 0) + 1;
   if (event.event === 'SessionEnd') {
     session.closedConversations.add(event.id);
     session.claudeLive = false;
     session.cwd = null;
-    attention.clear(state, id);
+    attention.progress(state, id, 0);
     contextChanged(state, session);
     return publicContext(state, session);
   }
@@ -925,7 +944,7 @@ handle('terminal:claude', async (state, id, data) => {
     session.conversationId !== event.id
   ) {
     session.closedConversations.add(session.conversationId);
-    attention.clear(state, id);
+    attention.progress(state, id, 0);
   }
   const changed =
     session.cwd !== info.cwd ||
@@ -977,6 +996,7 @@ handle('terminal:close', async (state, id) => {
   try {
     session.process?.kill();
   } catch {}
+  clearTimeout(session.directoryTimer);
   state.sessions.delete(id);
   refreshSharedContexts();
   if (session.worktree) reservedWorktrees.delete(session.worktree.name);
@@ -984,14 +1004,64 @@ handle('terminal:close', async (state, id) => {
   persistTabs(state);
   return true;
 });
-ipcMain.on('terminal:bell', (event, id, label) => {
+handle('terminal:program-status', (state, id, data) => {
+  const session = state.sessions.get(id);
+  if (!session?.process) return;
+  const report = parseProgramStatus(data);
+  if (!report) return;
+  session.activitySequence = (session.activitySequence || 0) + 1;
+  // Only a constant capability reply goes back into the PTY, never report text.
+  if (report.query) {
+    if (!session.finishExit) session.process.write(PROGRAM_STATUS_REPLY);
+  } else {
+    attention.program(state, id, report);
+    scheduleDirectory(state, session);
+  }
+});
+ipcMain.on('terminal:status-boundary', (event, id, boundary) => {
   try {
-    attention.bell(validState(event), id, label);
+    const state = validState(event);
+    const session = state.sessions.get(id);
+    if (!session?.process || !['prompt', 'reset'].includes(boundary)) return;
+    session.activitySequence = (session.activitySequence || 0) + 1;
+    if (boundary === 'reset') attention.reset(state, id);
+    else attention.prompt(state, id);
+  } catch {}
+});
+ipcMain.on('terminal:bell', async (event, id, label) => {
+  try {
+    const state = validState(event);
+    const session = state.sessions.get(id);
+    const processHandle = session?.process;
+    if (!processHandle) return;
+    if (attention.needsShellCheck(state, id)) {
+      if (session.bellChecking) return;
+      session.bellChecking = true;
+      try {
+        const sequence = session.activitySequence;
+        const directory = await shellDirectory(processHandle.pid, process.env.SHELL || '/bin/zsh');
+        if (
+          state.window.isDestroyed() ||
+          state.sessions.get(id) !== session ||
+          session.process !== processHandle ||
+          session.activitySequence !== sequence
+        )
+          return;
+        if (directory) attention.prompt(state, id);
+      } finally {
+        session.bellChecking = false;
+      }
+    }
+    attention.bell(state, id, label);
   } catch {}
 });
 ipcMain.on('terminal:progress', (event, id, value, label) => {
   try {
-    attention.progress(validState(event), id, value, label);
+    const state = validState(event);
+    const session = state.sessions.get(id);
+    if (!session?.process || !Number.isInteger(value) || value < 0 || value > 4) return;
+    session.activitySequence = (session.activitySequence || 0) + 1;
+    attention.progress(state, id, value, label);
   } catch {}
 });
 ipcMain.on('terminal:active', (event, id) => {
@@ -1036,6 +1106,7 @@ ipcMain.on('terminal:ack', (event, id, size) => {
     const session = validState(event).sessions.get(id);
     if (!session || !Number.isInteger(size) || size < 0) return;
     session.pendingBytes = Math.max(0, session.pendingBytes - size);
+    if (!session.pendingBytes) session.finishExit?.();
     if (session.paused && session.pendingBytes < 64 * 1024 && session.process) {
       session.process.resume();
       session.paused = false;
@@ -1226,8 +1297,8 @@ app.whenReady().then(async () => {
                     ? 'Claude Code integration enabled'
                     : 'Claude Code integration disabled',
                   detail: enabled
-                    ? 'Start a new Claude session in Dwell. The orb stays cool while working, turns amber when Claude needs you or finishes a response, and red when an API error stops the response. Sounds play for background alerts.\n\nYour other Claude settings and hooks are preserved. These hooks are active only in Dwell.'
-                    : 'Dwell’s hooks have been removed. Your other Claude settings and hooks are preserved. Restart existing Claude sessions to apply the change.',
+                    ? 'Start a new Claude session in Dwell to connect workspace and conversation context. These hooks also provide notifications for older supported Claude versions.\n\nNative status from Claude Code 2.1.295 or later works without these hooks. Your other Claude settings and hooks are preserved.'
+                    : 'Dwell’s hooks have been removed. Native terminal status remains available. Your other Claude settings and hooks are preserved. Restart existing Claude sessions to apply the hook change.',
                   buttons: ['OK'],
                 });
               } catch (error) {

@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld('dwell', {
   context: (id) => call('terminal:context', id),
   start: (id, cols, rows, mode, task) => call('terminal:start', id, cols, rows, mode, task),
   claude: (id, data) => call('terminal:claude', id, data),
+  programStatus: (id, data) => call('terminal:program-status', id, data),
+  statusBoundary: (id, boundary) => ipcRenderer.send('terminal:status-boundary', id, boundary),
   launcher: (value) => call('claude:launcher', value),
   newMenu: () => call('terminal:menu'),
   closeTerminal: (id) => call('terminal:close', id),

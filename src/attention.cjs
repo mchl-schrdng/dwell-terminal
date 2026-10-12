@@ -15,6 +15,7 @@ function createAttention(windows, preferences, savePreferences) {
   const reasons = {
     approval: 'Approval requested',
     question: 'Question',
+    auth: 'Sign-in required',
     plan: 'Plan to review',
     response: 'Response ready',
     error: 'Response interrupted',
@@ -27,13 +28,19 @@ function createAttention(windows, preferences, savePreferences) {
   }
 
   function first() {
-    const priority = { idle: 0, working: 1, attention: 2, error: 3 };
+    const priority = { idle: 0, working: 1, attention: 3, error: 4 };
     let selected;
+    let selectedPriority = 0;
     for (const item of items.values()) {
-      const level = priority[status(item)];
-      const current = selected ? priority[status(selected)] : 0;
-      if (level > current || (level && level === current && item.pending && !selected.pending))
+      const current = status(item);
+      const level = current === 'attention' && item.reason === 'response' ? 2 : priority[current];
+      if (
+        level > selectedPriority ||
+        (level && level === selectedPriority && item.pending && !selected.pending)
+      ) {
         selected = item;
+        selectedPriority = level;
+      }
     }
     return selected;
   }
@@ -43,12 +50,13 @@ function createAttention(windows, preferences, savePreferences) {
     const item = first();
     const session = item?.state.sessions.get(item.id);
     const label = session?.label || item?.label;
+    const project = item ? path.basename(session?.checkoutRoot || item.state.root) : 'Dwell';
     orb.webContents.send('orb:state', {
       count: [...items.values()].filter((entry) => entry.pending).length,
       status: item ? status(item) : 'idle',
-      label: item ? `${path.basename(item.state.root)} · ${label}` : 'Dwell',
+      label: item ? `${project} · ${label}` : 'Dwell',
       target: item ? `${item.state.window.webContents.id}:${item.id}` : null,
-      project: item ? path.basename(item.state.root) : 'Dwell',
+      project,
       checkout: item
         ? [session?.branch || (session?.checkoutRoot && path.basename(session.checkoutRoot)), label]
             .filter(Boolean)
@@ -117,18 +125,36 @@ function createAttention(windows, preferences, savePreferences) {
     nextStatus,
     typed,
     reason = nextStatus === 'error' ? 'error' : nextStatus === 'working' ? 'none' : 'attention',
+    programs,
   ) {
     if (!state.sessions.get(id)?.process) return;
     const focused = !app.isHidden() && state.window.isFocused();
     const key = `${state.window.webContents.id}:${id}`;
     const previous = items.get(key);
-    if (!typed && (previous?.typed || (focused && state.activeSession === id))) return;
-    if (typed && previous?.status === 'error' && nextStatus === 'attention') return;
-    if (previous?.status === nextStatus && previous.typed === typed) {
-      if (reason !== 'attention' && reason !== previous.reason) {
+    if (previous?.programs && !programs) return;
+    if (!typed && previous?.typed) return;
+    if (
+      !programs &&
+      typed &&
+      previous?.typed &&
+      previous.status === 'error' &&
+      nextStatus === 'attention'
+    )
+      return;
+    if (
+      previous?.status === nextStatus &&
+      previous.typed === typed &&
+      (typed || previous.pending || (focused && state.activeSession === id))
+    ) {
+      if (programs) {
+        previous.programs = programs;
+        previous.native = true;
+      }
+      if ((programs || reason !== 'attention') && reason !== previous.reason) {
         previous.reason = reason;
         previous.acknowledged = false;
-        previous.pending = !(focused && state.activeSession === id);
+        previous.pending =
+          ['attention', 'error'].includes(nextStatus) && !(focused && state.activeSession === id);
         report(previous);
         update();
       }
@@ -140,6 +166,8 @@ function createAttention(windows, preferences, savePreferences) {
       state,
       id,
       typed,
+      programs,
+      native: Boolean(programs),
       reason,
       status: nextStatus,
       acknowledged: false,
@@ -166,7 +194,7 @@ function createAttention(windows, preferences, savePreferences) {
           nextStatus === 'error'
             ? 'Dwell · Response interrupted'
             : 'Dwell · Terminal needs attention',
-        body: `${path.basename(state.root)} · ${item.label}`,
+        body: `${path.basename(state.sessions.get(id)?.checkoutRoot || state.root)} · ${item.label}`,
         silent: true,
       });
       item.notification = notification;
@@ -178,6 +206,7 @@ function createAttention(windows, preferences, savePreferences) {
   function progress(state, id, value, label, reason) {
     if (!state.sessions.get(id)?.process || !Number.isInteger(value) || value < 0 || value > 4)
       return;
+    if (items.get(`${state.window.webContents.id}:${id}`)?.programs) return;
     if (value === 0) clear(state, id);
     else
       signal(
@@ -191,7 +220,85 @@ function createAttention(windows, preferences, savePreferences) {
   }
 
   function interrupt(state, id) {
-    if (items.get(`${state.window.webContents.id}:${id}`)?.typed) clear(state, id);
+    const item = items.get(`${state.window.webContents.id}:${id}`);
+    if (item?.typed && !item.programs) clear(state, id);
+  }
+
+  function leadingProgram(programs) {
+    const priority = { idle: 0, working: 1, done: 2, blocked: 3, error: 4 };
+    let selected;
+    for (const entry of programs.values())
+      if (!selected || priority[entry.state] > priority[selected.state]) selected = entry;
+    return selected;
+  }
+
+  function program(state, id, value) {
+    const session = state.sessions.get(id);
+    if (!session?.process) return;
+    const key = `${state.window.webContents.id}:${id}`;
+    const programs = items.get(key)?.programs || new Map();
+    if (value.state === 'clear') {
+      for (const name of programs.keys())
+        if (!value.id || name === value.id || name.startsWith(value.id + '/'))
+          programs.delete(name);
+    } else {
+      programs.delete(value.id);
+      if (programs.size >= 64) programs.delete(programs.keys().next().value);
+      programs.set(value.id, value);
+    }
+    const selected = leadingProgram(programs);
+    const next = selected?.state || 'idle';
+    const reason =
+      next === 'blocked'
+        ? { permission: 'approval', question: 'question', auth: 'auth' }[selected.kind] ||
+          'attention'
+        : next === 'done'
+          ? 'response'
+          : next === 'error'
+            ? 'error'
+            : 'none';
+    signal(
+      state,
+      id,
+      session.label,
+      { idle: 'idle', working: 'working', done: 'attention', blocked: 'attention', error: 'error' }[
+        next
+      ],
+      true,
+      reason,
+      programs,
+    );
+  }
+
+  function prompt(state, id) {
+    const item = items.get(`${state.window.webContents.id}:${id}`);
+    if (!item?.typed) return;
+    if (item.programs) {
+      for (const [name, entry] of item.programs)
+        if (!['done', 'error'].includes(entry.state)) item.programs.delete(name);
+      const completed = leadingProgram(item.programs);
+      if (completed) {
+        item.programs = undefined;
+        item.typed = false;
+        item.status = completed.state === 'error' ? 'error' : 'attention';
+        item.reason = completed.state === 'error' ? 'error' : 'response';
+        report(item);
+        update();
+        return;
+      }
+    }
+    clear(state, id);
+  }
+
+  function finish(state, id) {
+    const item = items.get(`${state.window.webContents.id}:${id}`);
+    if (!item?.native) return clear(state, id);
+    if (item.typed) prompt(state, id);
+    else report(item);
+  }
+
+  function needsShellCheck(state, id) {
+    return items.get(`${state.window.webContents.id}:${id}`)?.typed === true;
   }
 
   function bell(state, id, label) {
@@ -388,7 +495,21 @@ function createAttention(windows, preferences, savePreferences) {
       savePreferences();
     }
   });
-  return { bell, progress, interrupt, acknowledge, clear, setEnabled, destroyOrb, reposition };
+  return {
+    bell,
+    progress,
+    program,
+    prompt,
+    finish,
+    needsShellCheck,
+    reset: clear,
+    interrupt,
+    acknowledge,
+    clear,
+    setEnabled,
+    destroyOrb,
+    reposition,
+  };
 }
 
 module.exports = { createAttention };
