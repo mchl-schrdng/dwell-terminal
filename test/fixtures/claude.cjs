@@ -75,5 +75,6 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   }
   if (command === 'NORMAL') process.stdout.write('\x1b[?1006l\x1b[?1000l\x1b[?1049l');
   if (command === 'UNRELATED') event('CwdChanged', { new_cwd: value });
+  if (command === 'UNRELATED_START') event('SessionStart', { cwd: value });
   console.log('FIXTURE_INPUT:' + line);
 });

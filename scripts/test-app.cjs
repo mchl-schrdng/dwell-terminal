@@ -894,6 +894,21 @@ async function until(check, description, timeout = 12000) {
       'desktop orb is enabled by default',
     );
     console.log('PASS: desktop orb is enabled on first launch');
+    assert.equal(
+      await application.evaluate(({ app }) => app.dock.isVisible()),
+      true,
+      'the desktop orb preserves normal macOS application activation',
+    );
+    await enableOrb(false);
+    // Electron suppresses DockHide for one second after showing the Dock icon.
+    await delay(1100);
+    await enableOrb(true);
+    assert.equal(
+      await application.evaluate(({ app }) => app.dock.isVisible()),
+      true,
+      'recreating the orb preserves the Dock icon and application menu',
+    );
+    console.log('PASS: desktop orb keeps the native macOS application menu accessible');
     await until(
       () =>
         Promise.resolve(application.windows().some((window) => window.url().endsWith('/orb.html'))),
@@ -1589,6 +1604,7 @@ if (cursorQuery) {
     await page.locator('#empty-new-terminal').click();
     await page.waitForSelector('.xterm-helper-textarea');
     await page.locator('[data-path="README.md"]').click();
+    await page.locator('[data-path="src"]').click();
     await page.locator('[data-path="src/App.tsx"]').click();
     const renamedId = await activeId();
     await command('export DWELL_RENAME_TEST=alive');
@@ -1676,13 +1692,16 @@ if (cursorQuery) {
       timeout: 30000,
     });
     page = await application.firstWindow();
-    await page.waitForSelector('[data-path="src/App.tsx"]');
+    await page.waitForSelector('[data-path="src"]');
     assert(await page.locator('#tree-pane').isVisible(), 'saved visible panels are restored');
     assert(await page.locator('#preview-pane').isVisible());
     assert.equal(await page.locator('#toggle-focus').getAttribute('aria-pressed'), 'false');
     assert.equal(await page.locator('#project-name').textContent(), path.basename(fixture));
-    assert.equal(await page.locator('#preview-name').textContent(), 'App.tsx');
-    assert.equal(await page.locator('#preview-name').getAttribute('title'), 'src/App.tsx');
+    assert.equal(await page.locator('#preview-name').textContent(), 'Preview');
+    assert(
+      (await page.locator('#preview-content').textContent()).includes('Select a file'),
+      'relaunch does not assign another tab’s old preview to the restored tab',
+    );
     assert.equal(await page.locator('#toggle-hidden').getAttribute('aria-pressed'), 'true');
     await page.waitForFunction(() => document.querySelectorAll('[role="tab"]').length === 2);
     assert.deepEqual(await page.getByRole('tab').allTextContents(), ['Claude — Dwell', 'Git']);

@@ -75,6 +75,23 @@ async function observeDirectory(projectRoot, directory) {
   return verifyCheckout(projectRoot, directory);
 }
 
+// Only call this with a directory observed from the local shell by the main process.
+async function followDirectory(previousRoot, directory) {
+  if (!cleanPath(directory)) throw new Error('Invalid directory.');
+  const cwd = await fs.realpath(directory);
+  if (!(await fs.stat(cwd)).isDirectory()) throw new Error('Invalid directory.');
+  const info = await checkout(cwd).catch((error) => {
+    if (error.stderr?.includes('not a git repository')) return null;
+    throw error;
+  });
+  const contains = (root, target) => {
+    const relative = path.relative(root, target);
+    return relative !== '..' && !relative.startsWith('../') && !path.isAbsolute(relative);
+  };
+  const keepRoot = contains(previousRoot, cwd) && (!info || contains(info.root, previousRoot));
+  return { root: keepRoot ? previousRoot : info?.root || cwd, cwd, branch: info?.branch || '' };
+}
+
 async function newWorktree(projectRoot, directory, label, reserved) {
   if (
     typeof label !== 'string' ||
@@ -148,6 +165,7 @@ module.exports = {
   checkout,
   verifyCheckout,
   observeDirectory,
+  followDirectory,
   newWorktree,
   restoreTabs,
 };

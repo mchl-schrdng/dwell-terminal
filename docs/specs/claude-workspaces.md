@@ -1,5 +1,7 @@
 # Dwell: isolated Claude workspaces
 
+> Historical implementation spec. Dwell 0.7.0 replaces per-checkout preview memory with per-tab memory and adds OS-verified local shell folder following; see [the current guide](../guide.md#terminals-and-previews). Terminal metadata alone still cannot authorize another repository.
+
 Status: archived design and validation record, implemented in Dwell 0.4.0. See the [current guide](../guide.md#claude-workspaces) for supported behavior. Original acceptance criteria, manual coverage and remaining limits are recorded below.
 
 Prepared on 2026-10-10 against Dwell 0.3.0, commit `d40bda6`. The design and handoff instructions below describe that implementation; they are not pending release work.
