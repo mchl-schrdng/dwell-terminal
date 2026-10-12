@@ -1,9 +1,13 @@
 # Changelog
 
-## 0.8.1
+## 0.8.2
+
+- Keep validated Claude conversation ownership when input arrives during startup checks, without restoring an invalidated directory. Resume returns to that running conversation instead of starting a duplicate.
+- Ship the native notifications, Line tabs and worktree correction below. Versions 0.8.0 and 0.8.1 were not released after release checks exposed startup timing issues.
+
+## 0.8.1 (unreleased)
 
 - Keep the worktree dialog usable when shell directory metadata refreshes within the same checkout. Reject creation if its source terminal closes, becomes unavailable or moves to another checkout.
-- Ship the native notifications and Line tab design below. Version 0.8.0 was not released after its release checks exposed the dialog race.
 
 ## 0.8.0 (unreleased)
 
