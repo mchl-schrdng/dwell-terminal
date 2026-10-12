@@ -1,6 +1,11 @@
 # Changelog
 
-## 0.8.0
+## 0.8.1
+
+- Keep the worktree dialog usable when shell directory metadata refreshes within the same checkout. Reject creation if its source terminal closes, becomes unavailable or moves to another checkout.
+- Ship the native notifications and Line tab design below. Version 0.8.0 was not released after its release checks exposed the dialog race.
+
+## 0.8.0 (unreleased)
 
 - Receive native program status from Claude Code 2.1.295+ without installing hooks or changing Claude settings. Route all Dwell tabs and windows to Eclipse and the existing background chime.
 - Keep native status separate from filesystem permissions, group repeated alerts, and restore ordinary terminal bells after a program returns to its shell.

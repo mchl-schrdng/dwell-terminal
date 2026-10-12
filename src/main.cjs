@@ -599,7 +599,7 @@ function terminalSize(cols, rows) {
     rows <= 500
   );
 }
-handle('terminal:create', async (state, id, label, parentId) => {
+handle('terminal:create', async (state, id, label, parentId, expectedRoot) => {
   if (!state.root) throw new Error('Open a folder first.');
   if (typeof id !== 'string' || !UUID.test(id) || state.sessions.has(id))
     throw new Error('Invalid terminal session.');
@@ -608,6 +608,11 @@ handle('terminal:create', async (state, id, label, parentId) => {
   const root = parent
     ? await contextRoot(state, { id: parent.id, revision: parent.revision })
     : state.root;
+  if (
+    expectedRoot !== undefined &&
+    (!parent || state.sessions.get(parentId) !== parent || root !== expectedRoot)
+  )
+    throw new Error('The source checkout changed. Open the worktree dialog again.');
   if (state.sessions.has(id) || state.sessions.size >= 32)
     throw new Error('Invalid terminal session.');
   const session = {

@@ -28,7 +28,8 @@ contextBridge.exposeInMainWorld('dwell', {
   reveal: (scope, relative) => call('files:reveal', scope, relative),
   watch: (scope, directories) => call('files:watch', scope, directories),
   save: (settings) => call('settings:save', settings),
-  createTerminal: (id, label, parentId) => call('terminal:create', id, label, parentId),
+  createTerminal: (id, label, parentId, expectedRoot) =>
+    call('terminal:create', id, label, parentId, expectedRoot),
   context: (id) => call('terminal:context', id),
   start: (id, cols, rows, mode, task) => call('terminal:start', id, cols, rows, mode, task),
   claude: (id, data) => call('terminal:claude', id, data),
