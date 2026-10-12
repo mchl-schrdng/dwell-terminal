@@ -285,7 +285,10 @@ function createAttention(windows, preferences, savePreferences) {
     reposition();
     for (const event of displayEvents) screen.on(event, displaysChanged);
     window.setAlwaysOnTop(true, 'floating');
-    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    window.setVisibleOnAllWorkspaces(true, {
+      visibleOnFullScreen: true,
+      skipTransformProcessType: true,
+    });
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', (event) => event.preventDefault());
     window.webContents.on('context-menu', () =>

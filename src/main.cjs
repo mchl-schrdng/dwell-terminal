@@ -21,6 +21,7 @@ const { git, listChanges, readDiff } = require('./git.cjs');
 const { createAttention } = require('./attention.cjs');
 const { tabColor } = require('./tab-colors.cjs');
 const { checkForUpdates } = require('./updates.cjs');
+const { foregroundDirectory, shellDirectory } = require('./shell-directory.cjs');
 const {
   setClaudeIntegration,
   isClaudeIntegrationEnabled,
@@ -32,8 +33,8 @@ const {
 const {
   UUID,
   checkout,
-  verifyCheckout,
   observeDirectory,
+  followDirectory,
   newWorktree,
   restoreTabs,
 } = require('./workspaces.cjs');
@@ -249,6 +250,7 @@ async function createWindow(root) {
       });
   });
   window.on('closed', () => {
+    clearTimeout(state.directoryTimer);
     clearTimeout(state.watchTimer);
     for (const watcher of state.watchers.values()) watcher.close();
     stopTerminals(state);
@@ -260,6 +262,61 @@ async function createWindow(root) {
   window.webContents.on('render-process-gone', () => stopTerminals(state));
   await window.loadURL('dwell://app/index.html');
   return window;
+}
+
+function scheduleDirectory(state) {
+  if (state.window.isDestroyed()) return;
+  if (state.directoryChecking) {
+    state.directoryPending = true;
+    return;
+  }
+  if (state.directoryTimer) return;
+  state.directoryTimer = setTimeout(() => {
+    state.directoryTimer = null;
+    pollDirectory(state);
+  }, 500);
+}
+
+async function pollDirectory(state) {
+  state.directoryChecking = true;
+  state.directoryPending = false;
+  const session = state.sessions.get(state.activeSession);
+  const processHandle = session?.process;
+  const revision = session?.revision;
+  const claudeSequence = session?.claudeSequence;
+  try {
+    if (!processHandle || session.unconfirmed || session.launching) return;
+    const directory = await shellDirectory(processHandle.pid, process.env.SHELL || '/bin/zsh');
+    if (!directory || (directory === session.cwd && !session.claudeLive)) return;
+    const info = await followDirectory(session.checkoutRoot, directory);
+    if (
+      state.window.isDestroyed() ||
+      state.sessions.get(session.id) !== session ||
+      state.activeSession !== session.id ||
+      session.process !== processHandle ||
+      session.claudeSequence !== claudeSequence ||
+      session.revision !== revision
+    )
+      return;
+    if (session.checkoutRoot !== info.root) {
+      session.conversationId = null;
+      session.launcher = null;
+    }
+    Object.assign(session, {
+      checkoutRoot: info.root,
+      cwd: info.cwd,
+      branch: info.branch,
+      status: 'ready',
+      contextError: null,
+      claudeLive: false,
+    });
+    contextChanged(state, session);
+  } catch {
+    // A busy or disappearing process must not replace the last validated context.
+  } finally {
+    state.directoryChecking = false;
+    if (state.directoryPending) scheduleDirectory(state);
+  }
 }
 
 function validState(event) {
@@ -339,6 +396,8 @@ function contextChanged(state, session) {
   });
   if (session.epochs.size > 128) session.epochs.delete(session.epochs.keys().next().value);
   if (state.activeSession === session.id) detachWatchers(state);
+  if (state.activeSession === session.id)
+    state.window.setTitle(path.basename(session.checkoutRoot) + ' — Dwell');
   refreshSharedContexts();
   persistTabs(state);
 }
@@ -506,10 +565,6 @@ handle('settings:save', (state, value) => {
     hidden: value.hidden === true,
     wrap: value.wrap !== false,
     treeMode: value.treeMode === 'changes' ? 'changes' : 'files',
-    expanded: Array.isArray(value.expanded)
-      ? value.expanded.filter((p) => typeof p === 'string').slice(0, 256)
-      : [],
-    selected: typeof value.selected === 'string' ? value.selected : null,
   };
   for (const tab of Array.isArray(value.tabs) ? value.tabs.slice(0, 32) : []) {
     const session = state.sessions.get(tab?.id);
@@ -518,6 +573,8 @@ handle('settings:save', (state, value) => {
       session.label = tab.label.trim().slice(0, 80) || 'Terminal';
   }
   preferences.projects[state.root] = { ...preferences.projects[state.root], ...settings };
+  delete preferences.projects[state.root].expanded;
+  delete preferences.projects[state.root].selected;
   persistTabs(state);
 });
 
@@ -569,10 +626,8 @@ handle('terminal:context', async (state, id) => {
   try {
     const actual = await fsp.realpath(session.checkoutRoot);
     if (actual !== session.checkoutRoot) throw new Error('Checkout changed.');
-    const info =
-      session.checkoutRoot === state.root
-        ? await checkout(actual).catch(() => null)
-        : await verifyCheckout(state.root, actual);
+    if (!(await fsp.stat(actual)).isDirectory()) throw new Error('Checkout unavailable.');
+    const info = await checkout(actual).catch(() => null);
     const status = 'ready';
     if (session.revision !== revision || state.sessions.get(id) !== session)
       return publicContext(state, session);
@@ -688,7 +743,7 @@ handle('terminal:start', async (state, id, cols, rows, mode = 'shell', task) => 
       ensureOpen();
       session.launcher = launcherKey(definition);
       if (mode === 'worktree') {
-        session.worktree = await newWorktree(state.root, cwd, task, reservedWorktrees);
+        session.worktree = await newWorktree(cwd, cwd, task, reservedWorktrees);
         ensureOpen();
         env.DWELL_LAUNCH_BIN = path.join(
           app.isPackaged ? process.resourcesPath : __dirname,
@@ -702,7 +757,7 @@ handle('terminal:start', async (state, id, cols, rows, mode = 'shell', task) => 
         command = launchCommand(loginShell, target, ['--worktree', session.worktree.name], true);
         session.status = 'starting';
       } else {
-        await observeDirectory(state.root, cwd);
+        await observeDirectory(session.checkoutRoot, cwd);
         ensureOpen();
         command = launchCommand(loginShell, definition, ['--resume', session.conversationId]);
       }
@@ -739,6 +794,7 @@ handle('terminal:start', async (state, id, cols, rows, mode = 'shell', task) => 
     contextChanged(state, session);
     processHandle.onData((data) => {
       if (state.sessions.get(id) !== session || session.process !== processHandle) return;
+      if (state.activeSession === id) scheduleDirectory(state);
       session.pendingBytes += data.length;
       send(state, 'terminal:data', { id, data });
       if (session.pendingBytes > 512 * 1024 && !session.paused) {
@@ -793,6 +849,8 @@ handle('terminal:claude', async (state, id, data) => {
     !(event.event === 'UserPromptSubmit' && !session.claudeLive)
   )
     return null;
+  // Claude's ordered hook takes precedence over a shell observation already in flight.
+  session.claudeSequence = (session.claudeSequence || 0) + 1;
   if (event.event === 'SessionEnd') {
     session.closedConversations.add(event.id);
     session.claudeLive = false;
@@ -802,12 +860,30 @@ handle('terminal:claude', async (state, id, data) => {
     return publicContext(state, session);
   }
   const nonce = session.nonce;
+  const processHandle = session.process;
+  const revision = session.revision;
   let info;
   try {
-    info =
-      session.claudeLive && session.cwd === event.cwd && event.event !== 'SessionStart'
-        ? { root: session.checkoutRoot, cwd: session.cwd, branch: session.branch }
-        : await observeDirectory(state.root, event.cwd);
+    try {
+      info =
+        session.claudeLive && session.cwd === event.cwd && event.event !== 'SessionStart'
+          ? { root: session.checkoutRoot, cwd: session.cwd, branch: session.branch }
+          : await observeDirectory(session.worktree?.origin || session.checkoutRoot, event.cwd);
+    } catch (error) {
+      if (
+        session.kind !== 'shell' ||
+        !starting ||
+        session.unconfirmed ||
+        session.expectedConversation
+      )
+        throw error;
+      // `cd other && claude` has no shell prompt; confirm the new root with macOS.
+      const observed = await foregroundDirectory(processHandle.pid);
+      if (!observed) throw error;
+      info = await followDirectory(session.checkoutRoot, observed.cwd);
+      if (info.cwd !== (await fsp.realpath(event.cwd)) || session.revision !== revision)
+        throw error;
+    }
     if (session.unconfirmed) {
       if (
         session.worktree.existing.includes(info.root) ||
@@ -816,6 +892,12 @@ handle('terminal:claude', async (state, id, data) => {
         throw new Error('Claude did not enter a new worktree based on the selected HEAD.');
     }
   } catch {
+    if (
+      session.nonce !== nonce ||
+      session.process !== processHandle ||
+      session.revision !== revision
+    )
+      return null;
     if (session.nonce === nonce && session.unconfirmed && !session.contextError) {
       session.status = 'unavailable';
       session.contextError =
@@ -830,7 +912,12 @@ handle('terminal:claude', async (state, id, data) => {
     }
     return null;
   }
-  if (session.nonce !== nonce || !session.process || state.sessions.get(id) !== session)
+  if (
+    session.nonce !== nonce ||
+    session.process !== processHandle ||
+    session.revision !== revision ||
+    state.sessions.get(id) !== session
+  )
     return null;
   if (
     event.event === 'SessionStart' &&
@@ -913,6 +1000,8 @@ ipcMain.on('terminal:active', (event, id) => {
     if (!state.sessions.has(id)) return;
     if (state.activeSession !== id) detachWatchers(state);
     state.activeSession = id;
+    scheduleDirectory(state);
+    state.window.setTitle(path.basename(state.sessions.get(id).checkoutRoot) + ' — Dwell');
     if (!app.isHidden() && state.window.isFocused()) attention.acknowledge(state, id);
   } catch {}
 });

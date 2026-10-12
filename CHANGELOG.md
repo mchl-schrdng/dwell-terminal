@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0
+
+- Give each terminal its own file selection, Files/Changes view and scroll position, including tabs in the same checkout.
+- Follow local shell directory changes without modifying shell configuration. Keep the project root while navigating subfolders; switch projects or worktrees and clear unrelated previews when leaving.
+- Restore each saved tab in its latest validated folder without starting commands, and keep Claude worktree/resume actions scoped to that tab.
+- Read directory changes from macOS rather than terminal escape sequences; keep Claude metadata restricted to its trusted repository.
+- Keep Dwell's Dock icon and application menu available when Eclipse is enabled, including access to Check for Updates.
+
 ## 0.6.0
 
 - Check for updates from the Dwell menu and download a newer stable release in your browser. Installation stays manual; checking or downloading never interrupts terminal sessions.

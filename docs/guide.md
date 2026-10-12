@@ -2,7 +2,7 @@
 
 Dwell is a small terminal workspace for macOS on Apple Silicon. It uses your existing shell and command-line tools.
 
-This guide describes **Dwell 0.6.0**, including update checks, saved tab colors, Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
+This guide describes **Dwell 0.7.0**, including independent tab contexts, folder following, update checks, saved tab colors, Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
 
 ## Install
 
@@ -26,7 +26,11 @@ Tab names, colors, their order and your project layout are restored on relaunch.
 
 Restored tabs wait for **Open Terminal** or **Resume Claude**; reopening Dwell does not run commands.
 
-Code, Markdown and image previews update as files change on disk. Previews are read-only; large files are bounded.
+Code, Markdown and image previews update as files change on disk. Previews are read-only; large files are bounded. Each open tab remembers its own file, Files/Changes view, expanded folders and scroll position. Switching tabs restores that view without restarting either terminal.
+
+The file tree follows the active local shell. Moving into a subfolder keeps the current project root and preview; entering another repository or worktree switches the tree and clears the previous preview. Outside Git, subfolders stay within the current folder until you leave it. A deliberately opened subfolder stays the root until you leave it too. Paths are read from the foreground shell through macOS, without changing shell startup files. Remote SSH directories and arbitrary program output do not change the local file scope; Claude uses its validated hooks.
+
+Saved tabs retain their latest project folder on relaunch. Preview navigation is remembered while tabs remain open; running commands are never resumed automatically.
 
 A new project opens with the terminal filling the workspace. Open Files or Preview when needed; existing saved layouts are kept. **Focus Mode** temporarily hides both panels and restores them when toggled again. Opening a panel or file leaves Focus Mode. **Changes** beside the session context opens the Git view directly.
 
@@ -57,7 +61,7 @@ Choose **Terminal → New Claude Worktree…** or the menu beside **+**, and nam
 
 The new branch starts from the initiating checkout’s **committed HEAD**. Dwell generates a unique name and waits for Claude to report a Git-verified checkout. Until then, Files and Changes are unavailable. Failed startup never falls back to the shared checkout.
 
-Files, diffs, previews and drop references follow the selected terminal. Returning to a checkout restores its selection, view mode and scroll. **+** and **⌘T** still open an ordinary shell, in the selected checkout; use it for servers and tests. Two Claude sessions in the same checkout are labelled **Shared Claude checkout**.
+Files, diffs, previews and drop references follow the selected terminal. Returning to a tab restores its own selection, view mode and scroll, even when several tabs share a checkout. **+** and **⌘T** still open an ordinary shell, in the selected checkout; use it for servers and tests. Two Claude sessions in the same checkout are labelled **Shared Claude checkout**.
 
 Dwell does not copy dirty files, `.env` or dependencies. User-configured Claude worktree setup remains Claude’s responsibility. Worktrees separate files and branches, not ports, databases or external services. Review, commit and merge through your usual Git workflow. Closing a tab stops its process; Dwell never removes a worktree, resets it, or answers Claude’s cleanup prompts.
 
@@ -104,6 +108,8 @@ Eclipse appears by default on first launch. Use **View → Desktop Orb** to show
 - **Red:** an API error interrupted the response. A failed tool that Claude can recover from does not trigger a red alert.
 
 Click Eclipse to return to the most urgent terminal, drag it to move, or right-click to hide. It follows the active Dwell window’s screen, resting in the bottom-right corner by default. Manual placement is saved relative to that screen’s edges, so changing resolution keeps it within reach. It respects reduced motion and has a static fallback without WebGL.
+
+In another app's full-screen Space, macOS may hide Eclipse. Dwell keeps its normal Dock icon and menu bar.
 
 Hover or focus Eclipse to see the current project, checkout/tab and reason: **Approval requested**, **Question**, **Plan to review**, **Response ready**, **Response interrupted**, or **Needs attention**. The card opens that same session. It contains no conversation text or tool inputs; refining a reason does not play another chime.
 

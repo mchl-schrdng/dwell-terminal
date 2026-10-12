@@ -6,6 +6,7 @@ const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { setClaudeIntegration } = require('../src/claude.cjs');
+const { quotePaths } = require('../src/files.cjs');
 const root = path.resolve(__dirname, '..');
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(check, label) {
@@ -22,6 +23,7 @@ async function until(check, label) {
     await fs.mkdtemp(path.join(os.tmpdir(), 'dwell-workspace-app-')),
   );
   const project = path.join(temporary, 'project');
+  const otherProject = path.join(temporary, 'other project');
   const profile = path.join(temporary, 'profile');
   await fs.mkdir(path.join(project, 'src'), { recursive: true });
   await fs.mkdir(path.join(profile, 'bin'), { recursive: true });
@@ -30,6 +32,10 @@ async function until(check, label) {
     'export const first = 1;\nexport const second = 2;\n',
   );
   await fs.writeFile(path.join(project, 'src/café space.js'), 'first\nsecond\nthird\n');
+  await fs.writeFile(
+    path.join(project, 'notes.txt'),
+    Array.from({ length: 240 }, (_, index) => `Project note ${index + 1}\n`).join(''),
+  );
   await fs.writeFile(path.join(project, '.gitignore'), '.claude/\n.env\n');
   const git = (...args) =>
     execFileSync('git', ['-c', 'commit.gpgsign=false', ...args], {
@@ -42,6 +48,12 @@ async function until(check, label) {
   git('config', 'user.email', 'test@example.invalid');
   git('add', '.');
   git('commit', '-qm', 'Fixture');
+  await fs.mkdir(path.join(otherProject, 'src'), { recursive: true });
+  await fs.writeFile(path.join(otherProject, 'src/café space.js'), 'Different project\n');
+  await fs.writeFile(path.join(otherProject, 'outside.txt'), 'Outside the original scope\n');
+  execFileSync('git', ['init', '-q', otherProject], {
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+  });
   await fs.writeFile(path.join(project, 'src/App.tsx'), 'staged original\n');
   git('add', '.');
   await fs.appendFile(path.join(project, 'src/App.tsx'), 'unstaged original\n');
@@ -130,8 +142,11 @@ async function until(check, label) {
   async function command(text) {
     const input = page.locator('.terminal-session:not([hidden]) .xterm-helper-textarea');
     await input.focus();
-    await page.keyboard.type(text);
-    await page.keyboard.press('Enter');
+    // Keyboard delivery is covered by test-app; send workspace fixtures atomically.
+    await page.evaluate(({ id, text }) => window.dwell.input(id, text + '\r'), {
+      id: await activeId(),
+      text,
+    });
   }
   async function createTask(name, source) {
     await page.locator('#tab-' + source).click();
@@ -277,7 +292,7 @@ async function until(check, label) {
           .locator('#show-changes')
           .getAttribute('aria-pressed')
           .then((value) => value === 'true'),
-      'per-checkout navigation',
+      'per-terminal navigation',
     );
     assert((await page.locator('#project-path').getAttribute('title')) === a.checkoutRoot);
     await application.evaluate(
@@ -314,11 +329,226 @@ async function until(check, label) {
     await page.locator('#new-terminal').click();
     await until(async () => (await activeId()) !== a.id, 'helper terminal created');
     const helper = await activeId();
+    assert.equal(await page.locator('#preview-name').textContent(), 'Preview');
+    assert(
+      (await page.locator('#preview-content').textContent()).includes('Select a file'),
+      'a new terminal does not inherit another terminal’s open file',
+    );
     await command('pwd');
     await until(() => output(helper, a.checkoutRoot), 'helper inherits active worktree');
     assert.equal((await context(helper)).conversationId, null);
     console.log(
       'PASS: native PTYs, separate worktrees, dirty HEAD, scoped files/diffs and helper cwd',
+    );
+
+    await page.locator('#tab-' + a.id).click();
+    await page.locator('#show-files').click();
+    await page.locator('[data-path="notes.txt"]').click();
+    await until(
+      () =>
+        page
+          .locator('#preview-content')
+          .textContent()
+          .then((text) => text.includes('Project note 240')),
+      'long preview for the first terminal',
+    );
+    const previewScroll = await page.locator('#preview-content').evaluate((element) => {
+      element.scrollTop = 520;
+      return element.scrollTop;
+    });
+    assert(previewScroll > 0, 'the preview fixture really scrolls');
+    await page.locator('#tab-' + helper).click();
+    assert.equal(await page.locator('#preview-name').textContent(), 'Preview');
+    await page.locator('[data-path="src"]').click();
+    await page.locator('[data-path="src/café space.js"]').click();
+    await until(
+      () =>
+        page
+          .locator('#preview-name')
+          .textContent()
+          .then((text) => text === 'café space.js'),
+      'second terminal opens its own file in the same checkout',
+    );
+    await page.locator('#tab-' + a.id).click();
+    await until(
+      () =>
+        page
+          .locator('#preview-content')
+          .evaluate((element, scroll) => element.scrollTop === scroll, previewScroll),
+      'first terminal restores its preview and scroll',
+    );
+    assert.equal(await page.locator('#preview-name').textContent(), 'notes.txt');
+    await page.locator('#tab-' + helper).click();
+    await application.evaluate(
+      (_electron, filename) => {
+        const files = process.getBuiltinModule('fs/promises');
+        const open = files.open;
+        global.navigationReadHeld = false;
+        files.open = async (...args) => {
+          if (args[0] === filename) {
+            files.open = open;
+            global.navigationReadHeld = true;
+            await new Promise((resolve) => setTimeout(resolve, 600));
+          }
+          return open(...args);
+        };
+      },
+      path.join(a.checkoutRoot, 'notes.txt'),
+    );
+    await page.locator('#tab-' + a.id).click();
+    await until(
+      () => application.evaluate(() => global.navigationReadHeld),
+      'first preview restoration is still loading',
+    );
+    await page.locator('#tab-' + helper).click();
+    await page.locator('#tab-' + a.id).click();
+    await until(
+      () =>
+        page
+          .locator('#preview-content')
+          .evaluate((element, scroll) => element.scrollTop === scroll, previewScroll),
+      'switching during a slow preview restoration preserves its intended scroll',
+    );
+    await delay(650);
+    assert.equal(await page.locator('#preview-name').textContent(), 'notes.txt');
+    assert.equal(
+      await page.locator('#preview-content').evaluate((element) => element.scrollTop),
+      previewScroll,
+    );
+    await page.locator('[data-path="src/App.tsx"]').click();
+    await page.locator('#show-changes').click();
+    await page.locator('#tab-' + helper).click();
+    await until(
+      () =>
+        page
+          .locator('#preview-name')
+          .textContent()
+          .then((text) => text === 'café space.js'),
+      'second terminal keeps its independent file selection',
+    );
+    assert.equal(await page.locator('#show-files').getAttribute('aria-pressed'), 'true');
+    console.log('PASS: tabs in the same checkout keep independent previews, modes and scroll');
+
+    await command('export DWELL_CONTEXT_VALUE=kept; printf \'CONTEXT_PID_%s\\n\' "$$"');
+    await until(
+      () => page.evaluate((id) => /CONTEXT_PID_\d+/.test(window.outputs[id] || ''), helper),
+      'navigation shell identity',
+    );
+    const helperPid = await page.evaluate(
+      (id) => window.outputs[id].match(/CONTEXT_PID_(\d+)/)[1],
+      helper,
+    );
+    await command('cd src');
+    await until(
+      async () => (await context(helper)).cwd === path.join(a.checkoutRoot, 'src'),
+      'plain shell subdirectory is detected',
+    );
+    assert.equal((await context(helper)).checkoutRoot, a.checkoutRoot);
+    assert.equal(await page.locator('#preview-name').textContent(), 'café space.js');
+    const beforeNavigation = { id: helper, revision: (await context(helper)).revision };
+    await command(
+      "printf '\\033]7;file://localhost%s\\007\\nOSC_DONE\\n' " + quotePaths([otherProject]),
+    );
+    await until(() => output(helper, 'OSC_DONE'), 'untrusted OSC output is rendered');
+    await delay(1200);
+    assert.equal((await context(helper)).checkoutRoot, a.checkoutRoot);
+    assert.equal((await context(helper)).cwd, path.join(a.checkoutRoot, 'src'));
+    const outsideRead = await page.evaluate(
+      async ({ id, filename }) => {
+        const { revision } = await window.dwell.context(id);
+        try {
+          await window.dwell.preview({ id, revision }, filename);
+          return false;
+        } catch {
+          return true;
+        }
+      },
+      {
+        id: helper,
+        filename: path.relative(a.checkoutRoot, path.join(otherProject, 'outside.txt')),
+      },
+    );
+    assert(outsideRead, 'terminal escape sequences cannot authorize another project');
+    await command('cd ' + quotePaths([otherProject]));
+    await until(
+      async () => (await context(helper)).checkoutRoot === otherProject,
+      'shell navigation follows an unrelated Git project',
+    );
+    assert.equal(await page.locator('#project-path').getAttribute('title'), otherProject);
+    assert.equal(await page.locator('#preview-name').textContent(), 'Preview');
+    assert(
+      !(await page.locator('#preview-content').textContent()).includes('Different project'),
+      'matching relative paths are not silently reopened in the new project',
+    );
+    assert(
+      await page.evaluate(async (scope) => {
+        try {
+          await window.dwell.preview(scope, 'outside.txt');
+          return false;
+        } catch {
+          return true;
+        }
+      }, beforeNavigation),
+      'the previous scope cannot read files after navigation',
+    );
+    await page.locator('[data-path="outside.txt"]').click();
+    await until(
+      () =>
+        page
+          .locator('#preview-content')
+          .textContent()
+          .then((text) => text.includes('Outside the original scope')),
+      'the observed project supplies the new preview scope',
+    );
+    await command('cd ' + quotePaths([a.checkoutRoot]));
+    await until(
+      async () => (await context(helper)).checkoutRoot === a.checkoutRoot,
+      'shell navigation follows the registered worktree again',
+    );
+    assert.equal(await page.locator('#preview-name').textContent(), 'Preview');
+    await command('cd ' + quotePaths([otherProject]) + '&& maison-fixture');
+    await until(async () => {
+      const current = await context(helper);
+      return current.checkoutRoot === otherProject && current.conversationId;
+    }, 'a single command can change project and launch Claude without a prompt in between');
+    await command('UNRELATED ' + profile);
+    await until(
+      () => output(helper, 'FIXTURE_INPUT:UNRELATED ' + profile),
+      'unrelated Claude metadata is processed',
+    );
+    assert.equal((await context(helper)).checkoutRoot, otherProject);
+    await command('UNRELATED_START ' + profile);
+    await until(
+      () =>
+        page
+          .locator('#session-' + helper + ' .xterm-rows')
+          .textContent()
+          .then((text) => text.includes('FIXTURE_INPUT:UNRELATED_START')),
+      'a forged SessionStart finishes native directory validation',
+    );
+    assert.equal((await context(helper)).checkoutRoot, otherProject);
+    await page.evaluate((id) => {
+      window.outputs[id] = '';
+    }, helper);
+    await command('QUIT');
+    await until(() => output(helper, 'DWELL_READY>'), 'Claude returns to the new project shell');
+    await until(
+      async () => (await context(helper)).cwd === otherProject,
+      'the new project shell directory is observed after Claude exits',
+    );
+    await command('cd ' + quotePaths([a.checkoutRoot]));
+    await until(
+      async () => (await context(helper)).checkoutRoot === a.checkoutRoot,
+      'the original worktree remains reachable after the combined command',
+    );
+    await command('printf \'AFTER_PID_%s\\nAFTER_ENV_%s\\n\' "$$" "$DWELL_CONTEXT_VALUE"');
+    await until(
+      () => output(helper, 'AFTER_ENV_kept'),
+      'shell environment survives context changes',
+    );
+    assert(await output(helper, 'AFTER_PID_' + helperPid), 'context changes keep the same PTY');
+    console.log(
+      'PASS: shell cwd follows projects safely, preserves subfolder previews and keeps the PTY',
     );
 
     await command('maison-fixture --resume ' + a.conversationId);
@@ -538,11 +768,14 @@ async function until(check, label) {
     await page.evaluate((id) => {
       window.outputs[id] = '';
     }, helper);
-    await command('maison-fixture --resume ' + a.conversationId);
-    await until(
-      async () => (await context(helper)).cwd === a.checkoutRoot,
-      'the conversation is running in a manual Claude shell',
-    );
+    await command('printf "\\033[2J\\033[H"; maison-fixture --resume ' + a.conversationId);
+    await until(async () => {
+      const rendered = await page.locator('#session-' + helper + ' .xterm-rows').textContent();
+      return (
+        rendered.includes('FIXTURE_READY:' + a.conversationId) &&
+        (await context(helper)).cwd === a.checkoutRoot
+      );
+    }, 'the conversation is running after its SessionStart hook has been processed');
     await page.keyboard.press('ArrowUp');
     await until(async () => (await context(helper)).cwd === null, 'cursor input invalidates cwd');
     await page.keyboard.press('Control+u');
@@ -562,7 +795,11 @@ async function until(check, label) {
     const beforeEnd = (await context(helper)).revision;
     await command('QUIT');
     await until(
-      () => output(helper, 'DWELL_READY>'),
+      () =>
+        page
+          .locator('#session-' + helper + ' .xterm-rows')
+          .textContent()
+          .then((text) => text.includes('DWELL_READY>')),
       'SessionEnd returns the manual launcher to its shell',
     );
     await until(async () => (await context(helper)).revision > beforeEnd, 'SessionEnd is observed');
@@ -585,6 +822,12 @@ async function until(check, label) {
           .getAttribute('title')
           .then((text) => text.includes('Session ended')),
       'second Claude exits',
+    );
+    await page.locator('#tab-' + helper).click();
+    await command('cd ' + quotePaths([otherProject]));
+    await until(
+      async () => (await context(helper)).checkoutRoot === otherProject,
+      'the shell’s changed project is saved before relaunch',
     );
     await delay(250);
     await application.evaluate(({ app }) => app.exit(0));
@@ -610,6 +853,16 @@ async function until(check, label) {
       await page.evaluate(() => Object.keys(window.outputs).length),
       0,
       'restart executes no commands',
+    );
+    assert.equal((await context(helper)).checkoutRoot, otherProject);
+    assert.equal((await context(helper)).status, 'ready');
+    const restoredPreview = await page.evaluate(async (id) => {
+      const { revision } = await window.dwell.context(id);
+      return window.dwell.preview({ id, revision }, 'outside.txt');
+    }, helper);
+    assert.equal(restoredPreview.text, 'Outside the original scope\n');
+    console.log(
+      'PASS: a saved unrelated project restores its validated scope without starting a shell',
     );
     await page.locator('#tab-' + a.id).click();
     await page.getByRole('button', { name: 'Resume Claude', exact: true }).waitFor();
@@ -669,9 +922,15 @@ async function until(check, label) {
     await application.evaluate(({ app }) => app.exit(0));
     application = null;
     await fs.rm(b.checkoutRoot, { recursive: true });
+    await fs.rm(otherProject, { recursive: true });
     await launch();
     assert(await page.locator('#tree-pane').isHidden(), 'saved false remains false after relaunch');
     assert(await page.locator('#preview-pane').isHidden());
+    assert.equal(
+      (await context(helper)).status,
+      'unavailable',
+      'a deleted saved project is unavailable',
+    );
     await page.locator('#tab-' + b.id).click();
     await until(
       () => page.getByRole('button', { name: 'Resume Claude', exact: true }).isDisabled(),
@@ -700,10 +959,9 @@ async function until(check, label) {
       () => output(b.id, 'DWELL_READY>'),
       'interrupted Claude returns to the recovered shell',
     );
-    assert.equal(
-      (await context(b.id)).cwd,
-      null,
-      'recovered shells clear stale Claude context too',
+    await until(
+      async () => (await context(b.id)).cwd === project,
+      'recovered shells replace stale Claude cwd with the real shell directory',
     );
     assert.deepEqual(errors, []);
     console.log('PASS: deleted worktree blocks resume and offers explicit plain-terminal recovery');

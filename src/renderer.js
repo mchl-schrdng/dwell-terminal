@@ -14,6 +14,8 @@ let selected = null;
 let expanded = new Set();
 let treeVersion = 0;
 let previewVersion = 0;
+let pendingTreeScroll = null;
+let pendingPreviewScroll = null;
 let lastPreview;
 let markdownSource = false;
 let saveTimer;
@@ -22,7 +24,7 @@ let terminalCounter = 0;
 let changesBusy = false;
 let focusMode = false;
 const sessions = new Map();
-const navigation = new Map();
+let visibleSession;
 let visibleRoot;
 let restoring = false;
 const scope = (session = activeSession) => ({
@@ -45,8 +47,6 @@ function save() {
       api
         .save({
           ...settings,
-          expanded: [...expanded],
-          selected,
           tabs: [...sessions.values()].map((session) => ({
             id: session.id,
             label: session.label,
@@ -198,9 +198,10 @@ async function refreshTree() {
   if (!fragment.children.length)
     fragment.append(node('div', 'tree-error', 'This folder is empty.'));
   const restoreFocus = focused && document.activeElement?.dataset.path === focused;
-  const scroll = $('#tree').scrollTop;
+  const scroll = pendingTreeScroll ?? $('#tree').scrollTop;
   $('#tree').replaceChildren(fragment);
   $('#tree').scrollTop = scroll;
+  pendingTreeScroll = null;
   const rows = [...$('#tree').querySelectorAll('.tree-row')];
   if (!rows.some((row) => row.tabIndex === 0) && rows[0]) rows[0].tabIndex = 0;
   if (restoreFocus)
@@ -222,7 +223,7 @@ async function refreshChanges(version) {
     const result = await api.changes(scope());
     if (version !== treeVersion) return;
     const focused = document.activeElement?.dataset.path;
-    const scroll = tree.scrollTop;
+    const scroll = pendingTreeScroll ?? tree.scrollTop;
     const fragment = document.createDocumentFragment();
     for (const entry of result.entries) {
       const row = node('button', 'tree-row change-row');
@@ -269,12 +270,16 @@ async function refreshChanges(version) {
       fragment.append(node('div', 'tree-error', 'Showing the first 1,000 changed files.'));
     tree.replaceChildren(fragment);
     tree.scrollTop = scroll;
+    pendingTreeScroll = null;
     const rows = [...tree.querySelectorAll('.tree-row')];
     if (!rows.some((row) => row.tabIndex === 0) && rows[0]) rows[0].tabIndex = 0;
     if (focused) rows.find((row) => row.dataset.path === focused)?.focus({ preventScroll: true });
     refreshIcons();
   } catch (error) {
-    if (version === treeVersion) tree.replaceChildren(node('div', 'tree-error', error.message));
+    if (version === treeVersion) {
+      tree.replaceChildren(node('div', 'tree-error', error.message));
+      pendingTreeScroll = null;
+    }
   }
 }
 
@@ -335,6 +340,7 @@ async function selectFile(relative) {
   if (changed) {
     markdownSource = false;
     lastPreview = null;
+    pendingPreviewScroll = null;
     $('#preview-content').scrollTop = 0;
   }
   settings.showPreview = true;
@@ -368,7 +374,7 @@ function emptyPreview(text, actions = false) {
 
 function displayPreview(file) {
   const content = $('#preview-content');
-  const scroll = content.scrollTop;
+  const scroll = pendingPreviewScroll ?? content.scrollTop;
   $('#toggle-source').hidden = file.kind !== 'markdown';
   $('#toggle-source').setAttribute('aria-pressed', String(markdownSource));
   $('#toggle-source').title = markdownSource ? 'View rendered Markdown' : 'View Markdown source';
@@ -402,6 +408,7 @@ function displayPreview(file) {
       ? 'Git diff · Read-only'
       : `${file.kind === 'markdown' ? 'Markdown' : file.kind === 'image' ? 'Image' : file.ext?.slice(1).toUpperCase() || 'File'} · ${formatSize(file.size)} · Read-only`;
   content.scrollTop = scroll;
+  pendingPreviewScroll = null;
 }
 function formatSize(size) {
   return size < 1024
@@ -428,6 +435,7 @@ async function loadPreview() {
   } catch (error) {
     if (version !== previewVersion) return;
     lastPreview = null;
+    pendingPreviewScroll = null;
     $('#preview-note').hidden = true;
     $('#toggle-source').hidden = true;
     $('#toggle-wrap').hidden = true;
@@ -554,37 +562,54 @@ function showSessions() {
 
 function showContext(session) {
   const context = session?.context;
-  if (visibleRoot && settings)
-    navigation.set(visibleRoot, {
+  const sameView =
+    session === visibleSession &&
+    context?.checkoutRoot === visibleRoot &&
+    context?.status === 'ready';
+  if (visibleSession && visibleRoot)
+    visibleSession.navigation = {
+      root: visibleRoot,
       selected,
       expanded: [...expanded],
       treeMode: settings.treeMode,
-      scroll: $('#tree').scrollTop,
-      previewScroll: $('#preview-content').scrollTop,
-    });
+      markdownSource,
+      scroll: pendingTreeScroll ?? $('#tree').scrollTop,
+      previewScroll: pendingPreviewScroll ?? $('#preview-content').scrollTop,
+    };
+  visibleSession = session;
   visibleRoot = context?.checkoutRoot;
   treeVersion++;
   previewVersion++;
-  lastPreview = null;
   changesBusy = false;
-  const nav = navigation.get(visibleRoot);
+  const nav = visibleRoot && session?.navigation?.root === visibleRoot ? session.navigation : null;
   selected = nav?.selected || null;
   expanded = new Set(nav?.expanded || []);
   settings.treeMode = nav?.treeMode || 'files';
-  markdownSource = false;
-  $('#tree').replaceChildren();
-  $('#preview-name').textContent = 'Preview';
-  $('#preview-path').textContent = '';
-  $('#file-status').textContent = '';
-  $('#preview-note').hidden = true;
-  emptyPreview(
-    context?.status === 'starting'
-      ? 'Starting worktree… Waiting for Claude to confirm its checkout.'
-      : context?.status === 'unavailable'
-        ? context.error || 'This checkout is unavailable.'
-        : 'Select a file to preview it.',
-  );
+  markdownSource = nav?.markdownSource || false;
+  if (!sameView) {
+    lastPreview = null;
+    pendingTreeScroll = nav?.scroll || 0;
+    pendingPreviewScroll = nav?.previewScroll || 0;
+    $('#tree').replaceChildren();
+  }
+  if (!sameView || !selected) {
+    $('#preview-name').textContent = 'Preview';
+    $('#preview-path').textContent = '';
+    $('#file-status').textContent = '';
+    $('#preview-note').hidden = true;
+    $('#toggle-source').hidden = true;
+    $('#toggle-wrap').hidden = true;
+    emptyPreview(
+      context?.status === 'starting'
+        ? 'Starting worktree… Waiting for Claude to confirm its checkout.'
+        : context?.status === 'unavailable'
+          ? context.error || 'This checkout is unavailable.'
+          : 'Select a file to preview it.',
+    );
+  }
   const root = context?.checkoutRoot || project.root;
+  $('#project-name').textContent = root.split('/').pop() || root;
+  $('#project-button').title = `${root} · Open Folder (⌘O)`;
   $('#project-path').textContent = root.startsWith(project.home + '/')
     ? '~' + root.slice(project.home.length)
     : root;
@@ -603,17 +628,9 @@ function showContext(session) {
             .join(' · ');
   layout();
   if (context?.status === 'ready') {
-    const version = treeVersion;
-    refreshTree()
-      .then(() => {
-        if (version + 1 === treeVersion) $('#tree').scrollTop = nav?.scroll || 0;
-      })
-      .catch(report);
+    refreshTree().catch(report);
     watch();
-    const preview = previewVersion;
-    loadPreview().then(() => {
-      if (previewVersion === preview + 1) $('#preview-content').scrollTop = nav?.previewScroll || 0;
-    });
+    loadPreview();
   }
 }
 
@@ -625,6 +642,7 @@ function acceptContext(context) {
   const restoreChanged =
     session.context?.status !== context.status ||
     session.context?.conversationId !== context.conversationId;
+  if (session.context?.checkoutRoot !== context.checkoutRoot) session.navigation = null;
   session.context = context;
   if (!context.cwd && session.linkEpochs) {
     for (const epoch of session.linkEpochs) epoch.marker.dispose();
@@ -1082,6 +1100,7 @@ async function openReference(session, reference, epoch) {
   settings.treeMode = 'files';
   markdownSource = true;
   lastPreview = null;
+  pendingPreviewScroll = null;
   selected = result.relative;
   const loading = selectFile(result.relative);
   const version = previewVersion;
@@ -1222,17 +1241,11 @@ async function openProject(value) {
   settings.terminalFontSize = Number.isFinite(settings.terminalFontSize)
     ? Math.max(11, Math.min(24, settings.terminalFontSize))
     : 14;
-  expanded = new Set(settings.expanded || []);
-  selected = settings.selected || null;
+  expanded = new Set();
+  selected = null;
   $('#toggle-hidden').setAttribute('aria-pressed', String(settings.hidden));
   layout();
   if (!sessions.size) {
-    navigation.set(value.root, {
-      selected,
-      expanded: [...expanded],
-      treeMode: settings.treeMode,
-      scroll: 0,
-    });
     restoring = true;
     if (value.tabs.length)
       for (const tab of value.tabs) await createTerminal(tab.label, { saved: tab });
@@ -1425,6 +1438,7 @@ for (const mode of ['files', 'changes']) {
   $(`#show-${mode}`).addEventListener('click', async () => {
     settings.treeMode = mode;
     lastPreview = null;
+    pendingPreviewScroll = null;
     $('#preview-content').scrollTop = 0;
     layout();
     save();

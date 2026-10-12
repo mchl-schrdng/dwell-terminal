@@ -8,6 +8,7 @@ const {
   checkout,
   verifyCheckout,
   observeDirectory,
+  followDirectory,
   newWorktree,
   restoreTabs,
 } = require('../src/workspaces.cjs');
@@ -85,6 +86,47 @@ test('manual context never expands a selected subfolder and non-Git notification
   await fs.mkdir(path.join(plain, 'nested'), { recursive: true });
   assert.equal((await observeDirectory(plain, path.join(plain, 'nested'))).root, plain);
   await assert.rejects(observeDirectory(plain, root));
+});
+
+test('observed shell directories follow projects while preserving selected subfolders', async (t) => {
+  const { directory, root, git } = await fixture(t);
+  const sub = path.join(root, 'src');
+  await fs.mkdir(path.join(sub, 'deep'), { recursive: true });
+  assert.equal((await followDirectory(root, path.join(sub, 'deep'))).root, root);
+  assert.equal((await followDirectory(sub, path.join(sub, 'deep'))).root, sub);
+  const linked = path.join(directory, 'linked');
+  git('worktree', 'add', '-qb', 'shell-worktree', linked, 'HEAD');
+  const alias = path.join(directory, 'linked alias');
+  await fs.symlink(linked, alias);
+  assert.equal((await followDirectory(root, alias)).root, linked);
+  assert.equal((await followDirectory(root, alias)).cwd, linked);
+
+  const other = path.join(directory, 'other');
+  execFileSync('git', ['init', '-q', other], {
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+  });
+  await fs.mkdir(path.join(other, 'nested'));
+  assert.equal((await followDirectory(root, path.join(other, 'nested'))).root, other);
+  const nestedRepository = path.join(sub, 'repository');
+  execFileSync('git', ['init', '-q', nestedRepository], {
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+  });
+  assert.equal((await followDirectory(root, nestedRepository)).root, nestedRepository);
+
+  const plain = path.join(directory, 'plain');
+  const sibling = path.join(directory, 'plain-sibling');
+  await fs.mkdir(path.join(plain, 'nested'), { recursive: true });
+  await fs.mkdir(sibling);
+  assert.equal((await followDirectory(root, plain)).root, plain);
+  assert.equal((await followDirectory(plain, path.join(plain, 'nested'))).root, plain);
+  assert.equal((await followDirectory(plain, sibling)).root, sibling);
+  for (const invalid of [
+    path.join(root, 'sample.txt'),
+    path.join(root, 'missing'),
+    'relative',
+    '/bad\npath',
+  ])
+    await assert.rejects(followDirectory(root, invalid));
 });
 
 test('migration preserves tab labels, exact IDs and safe metadata only', () => {
