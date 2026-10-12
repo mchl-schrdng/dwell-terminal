@@ -9,6 +9,7 @@ Dwell is a small Electron terminal for macOS on Apple Silicon. Keep it focused: 
 - `src/files.cjs`: bounded file reads and project path checks.
 - `src/git.cjs`: bounded, read-only Git status and diffs.
 - `src/attention.cjs` and `src/orb.*`: terminal alerts and the optional desktop orb.
+- `src/program-status.cjs`: bounded, untrusted native terminal status reports; no file access.
 - `src/claude.cjs` and `src/claude-hook.sh`: opt-in Claude Code hooks and terminal status events.
 - `src/workspaces.cjs`: validated checkout membership, local folder following and saved tab metadata.
 - `src/shell-directory.cjs`: bounded macOS foreground-shell directory observation.

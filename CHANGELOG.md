@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0
+
+- Receive native program status from Claude Code 2.1.295+ without installing hooks or changing Claude settings. Route all Dwell tabs and windows to Eclipse and the existing background chime.
+- Keep native status separate from filesystem permissions, group repeated alerts, and restore ordinary terminal bells after a program returns to its shell.
+- Show the alerting tab's current project and distinguish working motion from decorative idle motion.
+- Refine tab colors with Line: restrained two-color accents above plain graphite tabs, with a clear active border and matching palette swatches.
+- Preserve all six saved color choices and keep Claude's status indicators separate from tab accents.
+
 ## 0.7.0
 
 - Give each terminal its own file selection, Files/Changes view and scroll position, including tabs in the same checkout.

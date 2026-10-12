@@ -309,34 +309,33 @@ body.resizing {
 }
 .terminal-tab-item.active {
   color: var(--text);
-  border-color: rgba(205, 212, 229, 0.12);
-  background: rgba(205, 212, 229, 0.09);
+  border-color: #757985;
+  background: #373940;
 }
 .terminal-tab-item[data-color]:not([data-color='']) {
   position: relative;
   isolation: isolate;
-  color: #f0edf5;
-  background: #242429;
+  color: #b8bac4;
+  background: #28292f;
 }
 .terminal-tab-item[data-color]:not([data-color=''])::before {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: 0 7px auto;
+  height: 2px;
   z-index: -1;
-  border-radius: inherit;
-  background: linear-gradient(#11101855, #11101855), var(--tab-gradient);
-  opacity: 0.22;
+  border-radius: 0 0 2px 2px;
+  background: var(--tab-gradient);
+  opacity: 0.5;
 }
 .terminal-tab-item[data-color]:not([data-color='']).active {
-  color: #fff;
-  border-color: #ffffff50;
+  color: #f0edf5;
+  background: #373940;
 }
 .terminal-tab-item[data-color]:not([data-color='']).active::before {
-  background: linear-gradient(#1110188c, #1110188c), var(--tab-gradient);
   opacity: 1;
 }
-.terminal-tab-item[data-color]:not([data-color='']) .tab-close,
-.terminal-tab-item[data-color]:not([data-color='']).ended .terminal-tab {
+.terminal-tab-item[data-color]:not([data-color='']) .tab-close {
   color: inherit;
 }
 #tab-colors {
@@ -377,10 +376,20 @@ body.resizing {
 }
 .tab-color-swatch {
   display: block;
+  position: relative;
   height: 28px;
   margin-bottom: 4px;
+  border: 1px solid #45464d;
   border-radius: 4px;
-  background: var(--tab-gradient), #36373d;
+  background: #28292f;
+}
+.tab-color-swatch::before {
+  content: '';
+  position: absolute;
+  inset: 0 4px auto;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: var(--tab-gradient);
 }
 .tab-color-choice[data-color=''] .tab-color-swatch {
   width: 20px;

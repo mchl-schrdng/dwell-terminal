@@ -8,6 +8,8 @@ Dwell's renderer is sandboxed. Preview paths are restricted to the selected term
 
 Local folder following reads the foreground process through bounded macOS tools. Only observed local directories can authorize a different project; terminal escape sequences alone cannot expand the preview scope. File paths remain canonicalized and checked against that scope.
 
+Native OSC 7501 reports are untrusted, bounded terminal status. They cannot change the project, open files or execute commands. Dwell validates message encoding but discards message, title and application text; only fixed status labels appear outside the terminal. Capability detection writes a constant reply to the originating PTY. Records are bounded per terminal, and notification sounds are rate-limited.
+
 The terminal is a real shell with your normal account permissions. The project boundary applies to previews, not to commands you run. Dwell is not a sandbox for untrusted shell commands.
 
 Claude integration is opt-in through the Help menu. Setup merges only Dwell-owned hooks into Claude's user settings and removal preserves other hooks. The bundled hook uses macOS tools, accepts bounded JSON and emits bounded terminal status and checkout identity sequences; it does not read transcripts, execute message contents or open a network service. Any program in a terminal can emit a bell or progress sequence, so orb states are indicators rather than trusted proof of a program's identity or success.
