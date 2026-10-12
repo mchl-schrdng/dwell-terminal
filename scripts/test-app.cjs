@@ -1763,7 +1763,7 @@ if (cursorQuery) {
       'a disabled orb is not recreated',
     );
     console.log('PASS: a saved desktop orb opt-out overrides the default');
-    await application.evaluate(({ app }) => app.exit(0));
+    await application.close();
     application = null;
   } catch (error) {
     if (page && !page.isClosed()) {

@@ -142,8 +142,11 @@ async function until(check, label) {
   async function command(text) {
     const input = page.locator('.terminal-session:not([hidden]) .xterm-helper-textarea');
     await input.focus();
-    await page.keyboard.type(text);
-    await page.keyboard.press('Enter');
+    // Keyboard delivery is covered by test-app; send workspace fixtures atomically.
+    await page.evaluate(({ id, text }) => window.dwell.input(id, text + '\r'), {
+      id: await activeId(),
+      text,
+    });
   }
   async function createTask(name, source) {
     await page.locator('#tab-' + source).click();

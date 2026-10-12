@@ -20,6 +20,16 @@ test(
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dwell-shell-cwd-')));
     const nested = path.join(root, 'café space');
     await fs.mkdir(nested);
+    // The published macOS helper can lack its executable bit before the first build.
+    await fs.chmod(
+      path.join(
+        path.dirname(require.resolve('node-pty/package.json')),
+        'prebuilds',
+        `darwin-${process.arch}`,
+        'spawn-helper',
+      ),
+      0o755,
+    );
     const terminal = require('node-pty').spawn('/bin/zsh', ['-f'], {
       name: 'xterm-256color',
       cols: 80,
