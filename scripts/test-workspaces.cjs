@@ -148,10 +148,11 @@ async function until(check, label) {
       text,
     });
   }
-  async function createTask(name, source) {
+  async function createTask(name, source, whileOpen) {
     await page.locator('#tab-' + source).click();
     await menu('New Claude Worktree…');
     await page.locator('#worktree-name').fill(name);
+    if (whileOpen) await whileOpen();
     await page.getByRole('button', { name: 'Create Worktree', exact: true }).click();
     await until(async () => (await activeId()) !== source, 'new tab');
     const id = await activeId();
@@ -197,7 +198,56 @@ async function until(check, label) {
     assert.equal(await page.getByRole('tab').count(), 1);
     await page.evaluate(() => window.dwell.launcher({ command: 'maison-fixture', args: [] }));
     console.log('PASS: closing a pending launch starts no PTY and creates no worktree');
-    const a = await createTask('Auth', original);
+    await menu('New Claude Worktree…');
+    await page.locator('#worktree-name').fill('Changed source');
+    await page.evaluate(({ id, text }) => window.dwell.input(id, text), {
+      id: original,
+      text: 'cd ' + quotePaths([otherProject]) + '\r',
+    });
+    await until(
+      async () => (await context(original)).checkoutRoot === otherProject,
+      'the worktree dialog source moves to another checkout',
+    );
+    await until(
+      async () => (await page.locator('#project-path').getAttribute('title')) === otherProject,
+      'the renderer receives the changed source checkout',
+    );
+    const staleId = randomUUID();
+    await assert.rejects(
+      page.evaluate(
+        ({ id, parent, expectedRoot }) =>
+          window.dwell.createTerminal(id, 'Stale source', parent, expectedRoot),
+        { id: staleId, parent: original, expectedRoot: project },
+      ),
+      /checkout changed/i,
+    );
+    await assert.rejects(context(staleId), /Invalid terminal session/);
+    await page.getByRole('button', { name: 'Create Worktree', exact: true }).click();
+    assert.match(await page.locator('#worktree-error').textContent(), /source checkout changed/i);
+    assert(await page.locator('#worktree-dialog').isVisible());
+    assert.equal(await activeId(), original);
+    assert.equal(await page.getByRole('tab').count(), 1);
+    assert.equal(git('worktree', 'list', '--porcelain', '-z'), originalWorktrees);
+    await page.locator('#worktree-dialog').getByRole('button', { name: 'Cancel' }).click();
+    await command('cd ' + quotePaths([project]));
+    await until(
+      async () => (await context(original)).cwd === project,
+      'the dialog source returns to its original checkout',
+    );
+    const a = await createTask('Auth', original, async () => {
+      const source = await context(original);
+      await page.evaluate((id) => window.dwell.input(id, 'cd src\r'), original);
+      await until(
+        async () => (await context(original)).cwd === path.join(project, 'src'),
+        'the open dialog receives a shell directory update within its checkout',
+      );
+      const updated = await context(original);
+      assert.notEqual(updated.revision, source.revision);
+      assert.equal(updated.checkoutRoot, source.checkoutRoot);
+    });
+    console.log(
+      'PASS: worktree dialogs accept shell context updates and reject a changed source checkout',
+    );
     const b = await createTask('Auth', original);
     assert.notEqual(a.checkoutRoot, b.checkoutRoot);
     assert.notEqual(a.branch, b.branch);

@@ -765,7 +765,13 @@ async function createTerminal(savedLabel, options = {}) {
   let context;
   try {
     context =
-      options.saved || (await api.createTerminal(id, label, options.parentId ?? activeSession?.id));
+      options.saved ||
+      (await api.createTerminal(
+        id,
+        label,
+        options.parentId ?? activeSession?.id,
+        options.expectedRoot,
+      ));
   } catch (error) {
     report(error);
     return;
@@ -1347,7 +1353,7 @@ async function action(name) {
 let worktreeSource;
 function showWorktreeDialog() {
   if (!activeSession) return;
-  worktreeSource = scope();
+  worktreeSource = { id: activeSession.id, root: activeSession.context.checkoutRoot };
   $('#worktree-origin').textContent = activeSession.context.checkoutRoot;
   $('#worktree-name').value = '';
   $('#worktree-error').textContent = '';
@@ -1379,7 +1385,11 @@ $('#worktree-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const parent = sessions.get(worktreeSource.id);
   const task = $('#worktree-name').value.trim();
-  if (!parent || parent.context.revision !== worktreeSource.revision) {
+  if (
+    !parent ||
+    parent.context.checkoutRoot !== worktreeSource.root ||
+    parent.context.status !== 'ready'
+  ) {
     $('#worktree-error').textContent =
       'The source checkout changed. Close this dialog and try again.';
     return;
@@ -1395,7 +1405,12 @@ $('#worktree-form').addEventListener('submit', async (event) => {
     return;
   }
   $('#worktree-dialog').close();
-  await createTerminal(task, { mode: 'worktree', task, parentId: parent.id });
+  await createTerminal(task, {
+    mode: 'worktree',
+    task,
+    parentId: parent.id,
+    expectedRoot: worktreeSource.root,
+  });
 });
 $('#launcher-form').addEventListener('submit', async (event) => {
   event.preventDefault();
