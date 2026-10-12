@@ -818,17 +818,62 @@ async function until(check, label) {
     await page.evaluate((id) => {
       window.outputs[id] = '';
     }, helper);
-    await command('printf "\\033[2J\\033[H"; maison-fixture --resume ' + a.conversationId);
-    await until(async () => {
-      const rendered = await page.locator('#session-' + helper + ' .xterm-rows').textContent();
-      return (
-        rendered.includes('FIXTURE_READY:' + a.conversationId) &&
-        (await context(helper)).cwd === a.checkoutRoot
+    await command('printf "\\033[2J\\033[H"');
+    await until(
+      async () =>
+        !(await page.locator('#session-' + helper + ' .xterm-rows').textContent()).includes(
+          'FIXTURE_READY:',
+        ),
+      'the previous fixture marker is no longer rendered',
+    );
+    await application.evaluate((_electron, directory) => {
+      const files = process.getBuiltinModule('fs/promises');
+      const realpath = files.realpath;
+      global.sessionStartRealpath = realpath;
+      global.sessionStartWaiting = false;
+      files.realpath = async function (...args) {
+        // Hold only hook validation; context reads and preview paths remain real and unblocked.
+        if (args[0] === directory && new Error().stack.includes('observeDirectory (')) {
+          files.realpath = realpath;
+          global.sessionStartWaiting = true;
+          await new Promise((resolve) => {
+            global.releaseSessionStart = resolve;
+          });
+        }
+        return realpath.apply(this, args);
+      };
+    }, a.checkoutRoot);
+    try {
+      await command('maison-fixture --resume ' + a.conversationId);
+      await until(
+        () => application.evaluate(() => global.sessionStartWaiting),
+        'SessionStart is waiting for its real directory validation',
       );
-    }, 'the conversation is running after its SessionStart hook has been processed');
-    await page.keyboard.press('ArrowUp');
-    await until(async () => (await context(helper)).cwd === null, 'cursor input invalidates cwd');
-    await page.keyboard.press('Control+u');
+      await page.keyboard.press('ArrowUp');
+      await until(async () => (await context(helper)).cwd === null, 'cursor input invalidates cwd');
+      await page.keyboard.press('Control+u');
+    } finally {
+      await application.evaluate(() => {
+        process.getBuiltinModule('fs/promises').realpath = global.sessionStartRealpath;
+        global.releaseSessionStart?.();
+        delete global.sessionStartRealpath;
+        delete global.releaseSessionStart;
+        delete global.sessionStartWaiting;
+      });
+    }
+    await until(
+      async () =>
+        (await page.locator('#session-' + helper + ' .xterm-rows').textContent()).includes(
+          'FIXTURE_READY:' + a.conversationId,
+        ),
+      'the fresh fixture marker renders after SessionStart finishes',
+    );
+    assert.equal(
+      (await context(helper)).cwd,
+      null,
+      'late hook validation cannot restore stale cwd',
+    );
+    assert.equal((await context(helper)).conversationId, a.conversationId);
     await page.locator('#tab-' + a.id).click();
     await page.evaluate((id) => {
       window.outputs[id] = '';
@@ -836,7 +881,7 @@ async function until(check, label) {
     await page.getByRole('button', { name: 'Resume Claude', exact: true }).click();
     await until(
       async () => (await activeId()) === helper,
-      'resume focuses Claude after cursor input',
+      'resume focuses Claude after cursor input during SessionStart validation',
     );
     assert(!(await output(a.id, 'FIXTURE_READY')), 'unknown cwd is not proof that Claude exited');
     await page.evaluate((id) => {

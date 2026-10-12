@@ -886,6 +886,12 @@ handle('terminal:claude', async (state, id, data) => {
   const nonce = session.nonce;
   const processHandle = session.process;
   const revision = session.revision;
+  const activitySequence = session.activitySequence;
+  const inputSequence = session.inputSequence || 0;
+  const inputContextChanges = session.inputContextChanges || 0;
+  const checkoutRoot = session.checkoutRoot;
+  const branch = session.branch;
+  const status = session.status;
   let info;
   try {
     try {
@@ -919,6 +925,7 @@ handle('terminal:claude', async (state, id, data) => {
     if (
       session.nonce !== nonce ||
       session.process !== processHandle ||
+      session.activitySequence !== activitySequence ||
       session.revision !== revision
     )
       return null;
@@ -939,10 +946,25 @@ handle('terminal:claude', async (state, id, data) => {
   if (
     session.nonce !== nonce ||
     session.process !== processHandle ||
-    session.revision !== revision ||
+    session.activitySequence !== activitySequence ||
     state.sessions.get(id) !== session
   )
     return null;
+  const inputChanged = (session.inputSequence || 0) !== inputSequence;
+  // Typing may invalidate cwd while SessionStart is checked; retain only its verified identity.
+  const identityOnly =
+    inputChanged &&
+    event.event === 'SessionStart' &&
+    session.kind === 'shell' &&
+    !session.unconfirmed &&
+    !session.expectedConversation &&
+    session.cwd === null &&
+    session.checkoutRoot === checkoutRoot &&
+    info.root === checkoutRoot &&
+    session.branch === branch &&
+    session.status === status &&
+    session.revision - revision === (session.inputContextChanges || 0) - inputContextChanges;
+  if ((inputChanged || session.revision !== revision) && !identityOnly) return null;
   if (
     event.event === 'SessionStart' &&
     session.conversationId &&
@@ -952,22 +974,24 @@ handle('terminal:claude', async (state, id, data) => {
     attention.progress(state, id, 0);
   }
   const changed =
+    identityOnly ||
     session.cwd !== info.cwd ||
     session.checkoutRoot !== info.root ||
     session.conversationId !== event.id ||
     session.branch !== info.branch ||
     session.status !== 'ready';
-  Object.assign(session, {
-    conversationId: event.id,
-    checkoutRoot: info.root,
-    cwd: info.cwd,
-    branch: info.branch,
-    claudeLive: true,
-    status: 'ready',
-    unconfirmed: false,
-    contextError: null,
-    launcher: session.launcher || launcherKey(),
-  });
+  session.conversationId = event.id;
+  session.launcher ||= launcherKey();
+  if (!identityOnly)
+    Object.assign(session, {
+      checkoutRoot: info.root,
+      cwd: info.cwd,
+      branch: info.branch,
+      claudeLive: true,
+      status: 'ready',
+      unconfirmed: false,
+      contextError: null,
+    });
   session.closedConversations.delete(event.id);
   session.expectedConversation = null;
   if (changed) contextChanged(state, session);
@@ -1088,12 +1112,15 @@ ipcMain.on('terminal:input', (event, id, data) => {
       // A normal shell can return from Claude without SessionEnd reaching its hidden UI.
       if (
         session?.kind === 'shell' &&
-        session.cwd &&
         ['\r', '\n', '\u001b', '\u0003', '\u0004'].some((char) => data.includes(char))
       ) {
-        session.cwd = null;
-        session.claudeLive = false;
-        contextChanged(state, session);
+        session.inputSequence = (session.inputSequence || 0) + 1;
+        if (session.cwd) {
+          session.cwd = null;
+          session.claudeLive = false;
+          session.inputContextChanges = (session.inputContextChanges || 0) + 1;
+          contextChanged(state, session);
+        }
       }
       // Claude does not emit Stop when the user interrupts a turn.
       if (data === '\u0003' || data === '\u001b') attention.interrupt(state, id);
