@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.3
+
+- Seal the complete macOS app with an ad-hoc signature, including its native helpers and runtime resources. Fail packaging if signing or signature verification fails.
+- Verify the release checksum and extracted ZIP signature in CI, and reject a modified runtime resource in a regression test.
+- Clarify first-launch approval: the release is still not Apple-notarized, and macOS may require a manual exception.
+
 ## 0.8.2
 
 - Keep validated Claude conversation ownership when input arrives during startup checks, without restoring an invalidated directory. Resume returns to that running conversation instead of starting a duplicate.

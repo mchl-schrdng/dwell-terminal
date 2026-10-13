@@ -2,13 +2,24 @@
 
 Dwell is a small terminal workspace for macOS on Apple Silicon. It uses your existing shell and command-line tools.
 
-This guide describes **Dwell 0.8.2**, including native Claude notifications, independent tab contexts, folder following, update checks, Line tab colors, Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
+This guide describes **Dwell 0.8.3**, including native Claude notifications, independent tab contexts, folder following, update checks, Line tab colors, Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
 
 ## Install
 
 [Download the latest release](https://github.com/mchl-schrdng/dwell-terminal/releases/latest), unzip it, and move **Dwell.app** to Applications. Open Dwell and choose **Open Folder**.
 
-The release is not Apple-notarized. If macOS blocks the app, use **System Settings → Privacy & Security → Open Anyway** after trying to open it. Only do this for the release you downloaded from this repository.
+The release has a local (ad-hoc) signature but is **not Apple-notarized**. The signature verifies the bundle's files; it does not identify a developer trusted by Apple. macOS may still block a downloaded app, including with a “damaged” warning, on first launch or after an update.
+
+After trying to open Dwell, use **System Settings → Privacy & Security → Open Anyway**, if available. Only approve the release downloaded from this repository. See [Apple's first-launch guidance](https://support.apple.com/en-us/102445).
+
+If that option is unavailable, a manual exception is possible for this app only. First verify the downloaded ZIP against the `.sha256` file attached to the same release. After moving **Dwell.app** to Applications, with Dwell closed, run:
+
+```sh
+codesign --verify --deep --strict /Applications/Dwell.app &&
+  xattr -dr com.apple.quarantine /Applications/Dwell.app
+```
+
+This removes the download quarantine from Dwell only, allowing it to open without Apple notarization. It does not disable Gatekeeper for other apps. If signature verification fails, stop and download the latest release; do not remove its quarantine. Releases before 0.8.3 did not seal the complete bundle and may fail this check.
 
 ### Update Dwell
 

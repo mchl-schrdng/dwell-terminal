@@ -1,7 +1,7 @@
 {
   "name": "dwell-terminal",
   "productName": "Dwell",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "A quiet terminal workspace with a file tree and live previews.",
   "private": true,
   "license": "MIT",
@@ -25,6 +25,7 @@
     "check": "npm run lint && npm run format:check && npm test && npm run build",
     "test": "node --test test/*.test.cjs",
     "test:app": "node scripts/test-app.cjs && node scripts/test-workspaces.cjs && node scripts/test-notifications.cjs",
+    "test:package": "node scripts/test-package.cjs",
     "icons": "node scripts/icon.cjs",
     "package": "npm run build && node scripts/package.cjs"
   },
