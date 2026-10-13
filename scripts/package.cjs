@@ -23,6 +23,15 @@ async function main() {
     appCategoryType: 'public.app-category.developer-tools',
     icon: path.resolve(__dirname, '../assets/Dwell.icns'),
     asar: { unpack: '**/node-pty/**' },
+    // Seal the complete bundle locally; this does not provide Apple notarization.
+    osxSign: {
+      identity: '-',
+      identityValidation: false,
+      preAutoEntitlements: false,
+      preEmbedProvisioningProfile: false,
+      continueOnError: false,
+      optionsForFile: () => ({ entitlements: [], hardenedRuntime: false, timestamp: 'none' }),
+    },
     extraResource: ['orb-notification.wav', 'claude-hook.sh', 'claude-bin'].map((name) =>
       path.resolve(__dirname, '../src', name),
     ),

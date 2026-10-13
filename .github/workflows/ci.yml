@@ -48,6 +48,7 @@ jobs:
       - run: npm run check
       - run: npm run test:app
       - run: npm run package
+      - run: npm run test:package
       - name: Test the packaged app
         shell: bash
         run: |
