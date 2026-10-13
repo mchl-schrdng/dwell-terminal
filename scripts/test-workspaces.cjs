@@ -131,7 +131,7 @@ async function until(check, label) {
       const item = Menu.getApplicationMenu()
         .items.flatMap((group) => group.submenu?.items || [])
         .find((item) => item.label === label);
-      item.click(
+      return item.click(
         item,
         BrowserWindow.getAllWindows().find(
           (window) => window.webContents.getURL() === 'dwell://app/index.html',
@@ -252,6 +252,97 @@ async function until(check, label) {
     assert.notEqual(a.checkoutRoot, b.checkoutRoot);
     assert.notEqual(a.branch, b.branch);
     assert.notEqual(a.conversationId, b.conversationId);
+    await page.locator('#tab-' + original).click();
+    await command('export DWELL_FOLDER_TEST=preserved');
+    await page.locator('[data-path="notes.txt"]').click();
+    await until(
+      async () => (await page.locator('#preview-content').textContent()).includes('Project note 1'),
+      'the original tab has an open preview',
+    );
+    const otherAlias = path.join(temporary, 'other-project-alias');
+    await fs.symlink(otherProject, otherAlias);
+    await application.evaluate(({ dialog }) => {
+      global.originalFolderDialog = dialog.showOpenDialog;
+      dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] });
+    });
+    try {
+      await page.evaluate(() => window.dwell.chooseFolder());
+      assert.equal(await page.getByRole('tab').count(), 3);
+      assert.equal(await activeId(), original, 'canceling the picker keeps the active tab');
+      await application.evaluate(({ dialog }, folder) => {
+        dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
+      }, otherAlias);
+      await page.locator('#project-button').click();
+      await until(async () => (await page.getByRole('tab').count()) === 4, 'folder opens in a tab');
+      const folderTab = await activeId();
+      await until(() => output(folderTab, 'DWELL_READY>'), 'the selected folder starts a shell');
+      assert.equal((await context(folderTab)).checkoutRoot, otherProject);
+      assert.equal(
+        application.windows().filter((window) => window.url().endsWith('/index.html')).length,
+        1,
+        'the folder button keeps the existing window',
+      );
+      await command('printf \'FOLDER_PWD:%s\\n\' "$PWD"');
+      await until(() => output(folderTab, 'FOLDER_PWD:' + otherProject), 'the new shell directory');
+      await page.locator('[data-path="outside.txt"]').click();
+      await until(
+        async () =>
+          (await page.locator('#preview-content').textContent()).includes(
+            'Outside the original scope',
+          ),
+        'the new tab previews its own files',
+      );
+      await fs.mkdir(path.join(root, 'test-results'), { recursive: true });
+      await page.screenshot({ path: path.join(root, 'test-results/folder-tabs.png') });
+      await page.locator('#new-terminal').click();
+      await until(
+        async () => (await page.getByRole('tab').count()) === 5,
+        'plus opens another tab',
+      );
+      const sibling = await activeId();
+      await until(() => output(sibling, 'DWELL_READY>'), 'the sibling shell starts');
+      assert.equal((await context(sibling)).checkoutRoot, otherProject);
+      await menu('Open Folder…');
+      await until(
+        async () => (await page.getByRole('tab').count()) === 6,
+        'Open Folder also opens a tab',
+      );
+      const sameFolder = await activeId();
+      await until(
+        () => output(sameFolder, 'DWELL_READY>'),
+        'another shell in the same folder starts',
+      );
+      assert.equal((await context(sameFolder)).checkoutRoot, otherProject);
+      await page.locator('#tab-' + original).click();
+      await until(
+        async () =>
+          (await page.locator('#preview-content').textContent()).includes('Project note 1'),
+        'switching back restores the original preview',
+      );
+      await command('printf \'FOLDER_SESSION:%s:%s\\n\' "$DWELL_FOLDER_TEST" "$PWD"');
+      await until(
+        () => output(original, 'FOLDER_SESSION:preserved:' + project),
+        'the original shell and folder are unchanged',
+      );
+      assert.equal((await context(a.id)).conversationId, a.conversationId);
+      assert.equal((await context(b.id)).conversationId, b.conversationId);
+      assert.deepEqual(errors, [], 'opening folders must not raise renderer errors');
+      for (const id of [sameFolder, sibling, folderTab]) {
+        await page.locator('#tab-' + id).click();
+        await command('exit');
+        await page.waitForSelector('#restart-terminal:not([hidden])');
+        await menu('Close Terminal');
+        await page.locator('#tab-' + id).waitFor({ state: 'detached' });
+      }
+    } finally {
+      await application.evaluate(({ dialog }) => {
+        dialog.showOpenDialog = global.originalFolderDialog;
+        delete global.originalFolderDialog;
+      });
+    }
+    console.log(
+      'PASS: the folder button opens an independent tab and preserves live shells and previews',
+    );
     const projectAlias = path.join(temporary, 'project-alias');
     await fs.symlink(project, projectAlias);
     await application.evaluate(({ dialog }, folder) => {
@@ -259,7 +350,8 @@ async function until(check, label) {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
     }, projectAlias);
     try {
-      await page.evaluate(() => window.dwell.chooseFolder());
+      await menu('Open Folder in New Window…');
+      await until(() => page.evaluate(() => document.hasFocus()), 'the existing window is focused');
       assert.equal(
         application.windows().filter((window) => window.url().endsWith('/index.html')).length,
         1,
@@ -270,7 +362,11 @@ async function until(check, label) {
       await application.evaluate(({ dialog }, folder) => {
         dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
       }, a.checkoutRoot);
-      await page.evaluate(() => window.dwell.chooseFolder());
+      const opened = application.waitForEvent('window', {
+        predicate: (window) => window.url().endsWith('/index.html'),
+      });
+      await menu('Open Folder in New Window…');
+      await opened;
       const nested = application
         .windows()
         .find((window) => window !== page && window.url().endsWith('/index.html'));

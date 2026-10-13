@@ -2,7 +2,7 @@
 
 Dwell is a small terminal workspace for macOS on Apple Silicon. It uses your existing shell and command-line tools.
 
-This guide describes **Dwell 0.8.3**, including native Claude notifications, independent tab contexts, folder following, update checks, Line tab colors, Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
+This guide describes **Dwell 0.9.0**, including opening folders in tabs, native Claude notifications, independent tab contexts, folder following, update checks, Line tab colors, Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
 
 ## Install
 
@@ -33,7 +33,9 @@ Each terminal tab has its own shell session. Double-click a tab to rename it, or
 
 Right-click a tab to choose Solar, Ultraviolet, Lagoon, Acid, Ember or Iris. A thin gradient line marks the color above a plain graphite surface. The active tab has a brighter line, a lighter graphite fill and a visible border; inactive tabs stay muted. Choose **Graphite** to remove the line. With a tab focused, **Shift+F10** opens the same palette; **Escape** dismisses it. Existing saved colors are kept. Colors do not change Claude's status indicators.
 
-Tab names, colors, their order and your project layout are restored on relaunch. Running shell sessions are not restored. Switching tabs or resizing the workspace keeps sessions alive. Opening the same project again returns to its existing window.
+The folder button beside the tabs and **⌘O** open the selected folder in a new tab in the same window. **+** and **⌘T** start another terminal in the active tab's project folder. Each tab keeps its own folder and preview. To use a separate window, choose **File → Open Folder in New Window…**; this returns to the existing window if that project already has one.
+
+Tab names, colors, their order and your project layout are restored on relaunch. Running shell sessions are not restored. Switching tabs or resizing the workspace keeps sessions alive.
 
 Restored tabs wait for **Open Terminal** or **Resume Claude**; reopening Dwell does not run commands.
 
@@ -52,7 +54,7 @@ Terminal text size is saved per project, from 11 to 24 px. Resizing or zooming k
 | Shortcut     | Action                                         |
 | ------------ | ---------------------------------------------- |
 | ⌘T / ⌘W      | Open / close a terminal                        |
-| ⌘O           | Open a folder                                  |
+| ⌘O           | Open a folder in a new tab                     |
 | ⌘B / ⌘⇧P     | Toggle files / preview                         |
 | ⌘J           | Focus the terminal                             |
 | ⌘⇧[ / ⌘⇧]    | Previous / next terminal                       |

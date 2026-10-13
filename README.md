@@ -7,7 +7,7 @@
 <p align="center">A quiet macOS terminal, made for working with Claude Code.</p>
 
 <p align="center">
-  <a href="https://github.com/mchl-schrdng/dwell-terminal/releases/latest"><strong>Download Dwell 0.8.3 for Apple Silicon</strong></a>
+  <a href="https://github.com/mchl-schrdng/dwell-terminal/releases/latest"><strong>Download Dwell 0.9.0 for Apple Silicon</strong></a>
   &nbsp; · &nbsp;
   <a href="docs/guide.md">Getting started</a>
   &nbsp; · &nbsp;
@@ -31,7 +31,7 @@
 
 Your shell, your projects, your way of working. Dwell brings the things you reach for into one quiet workspace.
 
-- **Room for every task.** Independent terminals for Claude, your server and your tests. Name a tab, then find it instantly with ⌘K.
+- **Room for every task.** Open different project folders in tabs of the same window. Independent terminals for Claude, your server and your tests. Name a tab, then find it instantly with ⌘K.
 - **Context within reach.** Each tab keeps its own file and place. The tree follows your local shell between projects; subfolders keep the project in view. Preview code, Markdown and images, or drop a file into the terminal to insert its path.
 - **Changes in plain sight.** Review staged and unstaged Git diffs beside the conversation that created them.
 
@@ -84,7 +84,7 @@ Dwell adds no telemetry, accounts or cloud sync. Previews are read-only. Your la
 | Shortcut     | Action                                         |
 | ------------ | ---------------------------------------------- |
 | ⌘T / ⌘W      | Open / close a terminal                        |
-| ⌘O           | Open a folder                                  |
+| ⌘O           | Open a folder in a new tab                     |
 | ⌘B / ⌘⇧P     | Toggle files / preview                         |
 | ⌘⇧F          | Toggle Focus Mode                              |
 | ⌘K           | Find a session                                 |
