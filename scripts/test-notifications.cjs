@@ -296,7 +296,21 @@ async function until(check, label) {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
     }, otherProject);
     try {
-      await page.evaluate(() => window.dwell.chooseFolder());
+      const opened = application.waitForEvent('window', {
+        predicate: (window) => window.url().endsWith('/index.html'),
+      });
+      await application.evaluate(({ Menu, BrowserWindow }) => {
+        const item = Menu.getApplicationMenu()
+          .items.flatMap((group) => group.submenu?.items || [])
+          .find((item) => item.label === 'Open Folder in New Window…');
+        return item.click(
+          item,
+          BrowserWindow.getAllWindows().find(
+            (window) => window.webContents.getURL() === 'dwell://app/index.html',
+          ),
+        );
+      });
+      await opened;
     } finally {
       await application.evaluate(({ dialog }) => {
         dialog.showOpenDialog = global.nativeStatusOpenDialog;

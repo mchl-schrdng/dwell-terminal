@@ -609,7 +609,7 @@ function showContext(session) {
   }
   const root = context?.checkoutRoot || project.root;
   $('#project-name').textContent = root.split('/').pop() || root;
-  $('#project-button').title = `${root} · Open Folder (⌘O)`;
+  $('#project-button').title = `${root} · Open Folder in New Tab (⌘O)`;
   $('#project-path').textContent = root.startsWith(project.home + '/')
     ? '~' + root.slice(project.home.length)
     : root;
@@ -760,12 +760,13 @@ async function createTerminal(savedLabel, options = {}) {
     message('Up to 32 terminals can be open in one window.');
     return;
   }
-  const id = options.saved?.id || crypto.randomUUID();
+  const id = options.saved?.id || options.context?.id || crypto.randomUUID();
   const label = savedLabel || `Terminal ${terminalCounter + 1}`;
   let context;
   try {
     context =
       options.saved ||
+      options.context ||
       (await api.createTerminal(
         id,
         label,
@@ -1236,7 +1237,9 @@ $('#terminal-tabs').addEventListener('keydown', (event) => {
 async function openProject(value) {
   project = value;
   $('#project-name').textContent = value.name;
-  $('#project-button').title = value.root ? `${value.root} · Open Folder (⌘O)` : 'Open Folder · ⌘O';
+  $('#project-button').title = value.root
+    ? `${value.root} · Open Folder in New Tab (⌘O)`
+    : 'Open Folder · ⌘O';
   if (!value.root) return;
   $('#welcome').hidden = true;
   $('.terminal-heading').hidden = false;
@@ -1605,5 +1608,8 @@ api.onFiles((context) => {
   loadPreview();
 });
 api.onProject((value) => openProject(value).catch(report));
+api.onTerminalOpened((context) => {
+  createTerminal(context.label, { context }).catch(report);
+});
 refreshIcons();
 api.project().then(openProject).catch(report);

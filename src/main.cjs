@@ -88,16 +88,21 @@ function stopTerminals(state) {
   refreshSharedContexts();
 }
 
-async function chooseFolder(parent) {
+async function chooseFolder(parent, newWindow = false) {
+  const current = parent && windows.get(parent.webContents.id);
   const result = await dialog.showOpenDialog(parent, {
-    title: 'Open Folder',
+    title: current?.root && !newWindow ? 'Open Folder in New Tab' : 'Open Folder',
     buttonLabel: 'Open Folder',
     properties: ['openDirectory'],
   });
   if (result.canceled) return;
   const root = await fsp.realpath(result.filePaths[0]);
-  const current = parent && windows.get(parent.webContents.id);
-  if (current && !current.root && ![...windows.values()].some((state) => state.root === root)) {
+  if (!(await fsp.stat(root)).isDirectory()) throw new Error('Choose a folder.');
+  if (parent?.isDestroyed()) return;
+  if (current?.root && !newWindow) {
+    const context = await createTerminal(current, randomUUID(), path.basename(root), root);
+    send(current, 'terminal:opened', context);
+  } else if (current && !newWindow && ![...windows.values()].some((state) => state.root === root)) {
     current.root = root;
     preferences.lastRoot = root;
     savePreferences();
@@ -613,8 +618,13 @@ handle('terminal:create', async (state, id, label, parentId, expectedRoot) => {
     (!parent || state.sessions.get(parentId) !== parent || root !== expectedRoot)
   )
     throw new Error('The source checkout changed. Open the worktree dialog again.');
-  if (state.sessions.has(id) || state.sessions.size >= 32)
-    throw new Error('Invalid terminal session.');
+  if (state.sessions.has(id)) throw new Error('Invalid terminal session.');
+  return createTerminal(state, id, label, root);
+});
+
+async function createTerminal(state, id, label, root) {
+  if (state.window.isDestroyed()) throw new Error('The window was closed.');
+  if (state.sessions.size >= 32) throw new Error('Up to 32 terminals can be open in one window.');
   const session = {
     id,
     label: typeof label === 'string' ? label.trim().slice(0, 80) : 'Terminal',
@@ -631,7 +641,7 @@ handle('terminal:create', async (state, id, label, parentId, expectedRoot) => {
   session.branch = info?.branch;
   persistTabs(state);
   return publicContext(state, session);
-});
+}
 
 handle('terminal:context', async (state, id) => {
   const session = state.sessions.get(id);
@@ -1207,7 +1217,17 @@ app.whenReady().then(async () => {
           {
             label: 'Open Folder…',
             accelerator: 'CmdOrCtrl+O',
-            click: () => chooseFolder(BrowserWindow.getFocusedWindow()),
+            click: (_item, window) =>
+              chooseFolder(window).catch((error) =>
+                dialog.showErrorBox('Open Folder', friendlyError(error)),
+              ),
+          },
+          {
+            label: 'Open Folder in New Window…',
+            click: (_item, window) =>
+              chooseFolder(window, true).catch((error) =>
+                dialog.showErrorBox('Open Folder', friendlyError(error)),
+              ),
           },
           { label: 'New Terminal', accelerator: 'CmdOrCtrl+T', click: action('new-terminal') },
           { type: 'separator' },

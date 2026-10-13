@@ -54,5 +54,6 @@ contextBridge.exposeInMainWorld('dwell', {
   onFocusTerminal: (callback) => listen('terminal:focus', callback),
   onFiles: (callback) => listen('files:changed', callback),
   onProject: (callback) => listen('project:opened', callback),
+  onTerminalOpened: (callback) => listen('terminal:opened', callback),
   onMenu: (callback) => listen('menu:action', callback),
 });

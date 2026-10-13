@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0
+
+- Open a selected folder in a new tab in the same window from the folder button or ⌘O. Name the tab after its folder and preserve running sessions and each tab's preview.
+- Keep + and ⌘T in the active tab's project. Make separate windows an explicit **File → Open Folder in New Window…** action.
+- Cover cancellation, selected folder aliases, repeated folders, independent shell directories and preview restoration in the macOS application tests.
+
 ## 0.8.3
 
 - Seal the complete macOS app with an ad-hoc signature, including its native helpers and runtime resources. Fail packaging if signing or signature verification fails.
