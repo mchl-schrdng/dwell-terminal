@@ -69,7 +69,10 @@ test(
     assert.equal(await shellDirectory(terminal.pid, '/bin/zsh'), root);
     await command("printf '\\x42USY\\n'; /bin/sleep 10", 'BUSY');
     assert.equal(await shellDirectory(terminal.pid, '/bin/zsh'), null);
-    assert.deepEqual(await foregroundDirectory(terminal.pid), { cwd: root, commands: ['sleep'] });
+    const foreground = await foregroundDirectory(terminal.pid);
+    assert.equal(foreground.cwd, root);
+    assert.deepEqual(foreground.commands, ['sleep']);
+    assert.match(foreground.identity, /^\d+\s+.*sleep$/);
     terminal.write('\x03');
     await command('exit', 'DWELL_PROMPT>');
     await command("printf '\\x52ETURNED\\n'", 'RETURNED');

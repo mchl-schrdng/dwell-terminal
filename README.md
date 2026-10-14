@@ -7,7 +7,7 @@
 <p align="center">A quiet macOS terminal, made for working with Claude Code.</p>
 
 <p align="center">
-  <a href="https://github.com/mchl-schrdng/dwell-terminal/releases/latest"><strong>Download Dwell 0.9.0 for Apple Silicon</strong></a>
+  <a href="https://github.com/mchl-schrdng/dwell-terminal/releases/latest"><strong>Download Dwell 0.10.0 for Apple Silicon</strong></a>
   &nbsp; · &nbsp;
   <a href="docs/guide.md">Getting started</a>
   &nbsp; · &nbsp;
@@ -34,6 +34,7 @@ Your shell, your projects, your way of working. Dwell brings the things you reac
 - **Room for every task.** Open different project folders in tabs of the same window. Independent terminals for Claude, your server and your tests. Name a tab, then find it instantly with ⌘K.
 - **Context within reach.** Each tab keeps its own file and place. The tree follows your local shell between projects; subfolders keep the project in view. Preview code, Markdown and images, or drop a file into the terminal to insert its path.
 - **Changes in plain sight.** Review staged and unstaged Git diffs beside the conversation that created them.
+- **Less explaining. More context.** Paste a screenshot into Claude with ⌘V. Select a passage in a preview and right-click **Ask Claude** to place it in the current conversation. Add your question, then press Enter.
 
 **Focus** gives your terminal the space. Compact tabs, panels on demand and text at the size you like. The current checkout and Claude’s status stay within sight. [Explore Focus →](docs/guide.md#terminals-and-previews)
 

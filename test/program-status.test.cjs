@@ -16,13 +16,26 @@ test('program status detects support with a fixed reply and keeps only semantic 
       parseProgramStatus(
         `state=blocked:kind=${kind}:app=claude-code:progress=80:msg=${encoded('Private message')}:title=${encoded('Private title')}`,
       ),
-      { state: 'blocked', id: '', kind },
+      { state: 'blocked', id: '', kind, app: 'claude-code' },
     );
     assert.equal(parseProgramStatus(`state=working:kind=${kind}`).kind, undefined);
   }
   assert.equal(parseProgramStatus('state=blocked:kind=future').kind, undefined);
   for (const value of [null, undefined, 3, {}, '', ' ? ', '? ', 'kind=auth', 'state=future'])
     assert.equal(parseProgramStatus(value), null);
+});
+
+test('application identity is bounded metadata and stays attached to its reported record', () => {
+  assert.equal(parseProgramStatus('state=idle:app=claude-code').app, 'claude-code');
+  assert.deepEqual(parseProgramStatus('state=working:id=child:app=claude-code'), {
+    state: 'working',
+    id: 'child',
+    kind: undefined,
+    app: 'claude-code',
+  });
+  assert.equal(parseProgramStatus('state=idle:app=claude-code:app=other').app, 'other');
+  assert.equal(parseProgramStatus('state=clear').app, undefined);
+  assert.equal(parseProgramStatus(`state=idle:app=${'a'.repeat(33)}`), null);
 });
 
 test('unknown and malformed pairs do not erase valid state; the last valid duplicate wins', () => {

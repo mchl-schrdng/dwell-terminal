@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0
+
+- Paste clipboard images into a local interactive Claude session with ⌘V or Edit → Paste, using Claude's native attachment handling.
+- Select preview text and choose **Ask Claude** to prepare file context in the current tab without submitting it. Include source line ranges and honest Markdown or diff labels.
+- Check the active tab and running foreground program before inserting Claude context. Cancel stale preview actions and prevent delayed text paste from reaching a different tab.
+- Keep diff content beginning with `++` or `--` styled as source changes rather than file headers.
+
 ## 0.9.0
 
 - Open a selected folder in a new tab in the same window from the folder button or ⌘O. Name the tab after its folder and preserve running sessions and each tab's preview.

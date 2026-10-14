@@ -32,12 +32,13 @@ async function until(check, description, timeout = 12000) {
   );
   await fs.writeFile(
     path.join(fixture, 'README.md'),
-    '# My project\n\nA quiet workspace for focused work.\n\n## Getting started\n\n```sh\nnpm install\nnpm run dev\n```\n',
+    '# My project\n\nA quiet workspace for focused work.  \nA second line stays separate.\n\n## Getting started\n\n```sh\nnpm install\nnpm run dev\n```\n',
   );
   await fs.writeFile(
     path.join(fixture, 'docs/unsafe.md'),
     '# Safe preview\n<script>window.previewExecuted = true</script>\n<img src="https://example.com/tracker" onerror="window.previewExecuted = true">\n[Bad link](javascript:alert(1))',
   );
+  await fs.writeFile(path.join(fixture, 'selection.txt'), 'first\n\n--counter\n');
   await fs.writeFile(path.join(fixture, '.hidden'), 'hidden');
   await fs.copyFile(path.join(root, 'test/fixtures/preview.png'), path.join(fixture, 'image.png'));
   const git = (...args) =>
@@ -640,6 +641,183 @@ async function until(check, description, timeout = 12000) {
     await page.locator('[data-path="src/App.tsx"]').click();
     await page.waitForSelector('.source-line');
     assert((await page.locator('#preview-content').innerText()).includes('One thing at a time.'));
+    // Exercise the real selection/menu path; native PTY delivery has its own isolated fixture.
+    await application.evaluate(({ Menu, ipcMain }) => {
+      global.originalPreviewPopup = Menu.prototype.popup;
+      global.originalDraftHandler = ipcMain._invokeHandlers.get('terminal:claude-draft');
+      global.previewDrafts = [];
+      Menu.prototype.popup = function (options) {
+        if (this.items[0]?.label !== 'Ask Claude')
+          return global.originalPreviewPopup.call(this, options);
+        global.previewMenuLabel = this.items[0].label;
+        const click = () => {
+          this.items[0].click();
+          options.callback?.();
+        };
+        if (global.holdPreviewMenu) global.releasePreviewMenu = click;
+        else click();
+      };
+      ipcMain.removeHandler('terminal:claude-draft');
+      ipcMain.handle('terminal:claude-draft', (_event, context, text) => {
+        global.previewDrafts.push({ context, text });
+        return { ok: true, value: true };
+      });
+    });
+    const sourceSelection = (first, last, backward = false) =>
+      page.evaluate(
+        ({ first, last, backward }) => {
+          const rows = document.querySelectorAll('.source-text');
+          const start = document.createRange();
+          start.selectNodeContents(rows[first - 1]);
+          const end = document.createRange();
+          end.selectNodeContents(rows[last - 1]);
+          const selection = window.getSelection();
+          selection.setBaseAndExtent(
+            backward ? end.endContainer : start.startContainer,
+            backward ? end.endOffset : start.startOffset,
+            backward ? start.startContainer : end.endContainer,
+            backward ? start.startOffset : end.endOffset,
+          );
+        },
+        { first, last, backward },
+      );
+    const previewMenu = () =>
+      page.locator('#preview-content').dispatchEvent('contextmenu', { bubbles: true });
+    try {
+      await sourceSelection(1, 2, true);
+      await page.screenshot({ path: path.join(output, 'ask-claude-selection.png') });
+      await previewMenu();
+      await until(
+        () => application.evaluate(() => global.previewDrafts.length === 1),
+        'Ask Claude prepares a selected source range',
+      );
+      const draft = await application.evaluate(() => global.previewDrafts[0]);
+      assert.equal(draft.context.id, firstId);
+      assert.match(draft.text, /src\/App\.tsx/);
+      assert.match(draft.text, /1[–-]2/);
+      assert(
+        draft.text.includes(
+          'export default function App() {\n  return <main>One thing at a time.</main>;',
+        ),
+      );
+      assert(!draft.text.includes('\n1export'), 'line gutters never enter the draft');
+      await page.locator('[data-path="selection.txt"]').click();
+      await page.waitForFunction(
+        () => document.querySelector('.source-text')?.textContent === 'first',
+      );
+      await page.evaluate(() => {
+        const rows = document.querySelectorAll('.source-text');
+        const selection = window.getSelection();
+        selection.setBaseAndExtent(rows[0], 0, rows[2], 0);
+      });
+      await previewMenu();
+      await until(
+        () => application.evaluate(() => global.previewDrafts.length === 2),
+        'selection ending at the next row excludes that row',
+      );
+      const boundary = await application.evaluate(() => global.previewDrafts[1].text);
+      assert.match(boundary, /lines 1[–-]2/);
+      assert(!boundary.includes('--counter'));
+      await sourceSelection(1, 3, true);
+      await previewMenu();
+      await until(
+        () => application.evaluate(() => global.previewDrafts.length === 3),
+        'backward selection preserves a blank source line',
+      );
+      assert(
+        (await application.evaluate(() => global.previewDrafts[2].text)).includes(
+          'first\n\n--counter',
+        ),
+      );
+      await page.locator('[data-path="README.md"]').click();
+      await page.waitForSelector('.markdown p');
+      await page
+        .locator('.markdown p')
+        .first()
+        .evaluate((paragraph) => {
+          const range = document.createRange();
+          range.selectNodeContents(paragraph);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+        });
+      await previewMenu();
+      await until(
+        () => application.evaluate(() => global.previewDrafts.length === 4),
+        'rendered Markdown selection is included honestly',
+      );
+      const markdown = await application.evaluate(() => global.previewDrafts[3].text);
+      assert.match(markdown, /README\.md.*\(rendered Markdown\)/);
+      assert(markdown.includes('A quiet workspace for focused work.'));
+      assert(markdown.includes('focused work.\nA second line stays separate.'));
+      assert(!/\blines? \d/.test(markdown), 'rendered Markdown does not invent source lines');
+      await fs.writeFile(path.join(fixture, 'selection.txt'), 'first\n\n++counter\n');
+      git('add', 'selection.txt');
+      await fs.writeFile(path.join(fixture, 'selection.txt'), 'first\n\n+++counter\n');
+      await page.locator('#show-changes').click();
+      await page.locator('.change-row[data-path="selection.txt"]').click();
+      await until(
+        async () => (await page.locator('.diff-heading').count()) === 2,
+        'selection fixture has staged and unstaged hunks',
+      );
+      assert(
+        (await page.locator('.diff-line.removed').allTextContents()).includes('---counter'),
+        'removed content beginning with two minus signs is not a file header',
+      );
+      assert(
+        (await page.locator('.diff-line.added').allTextContents()).includes('+++counter'),
+        'added content beginning with two plus signs is not a file header',
+      );
+      await page.evaluate(() => {
+        const first = document.querySelector('.diff-line.removed');
+        const last = [...document.querySelectorAll('.diff-line.added')].at(-1);
+        window.getSelection().setBaseAndExtent(first, 0, last, last.childNodes.length);
+      });
+      await previewMenu();
+      await until(
+        () => application.evaluate(() => global.previewDrafts.length === 5),
+        'diff selection preserves staged and unstaged context',
+      );
+      const diff = await application.evaluate(() => global.previewDrafts[4].text);
+      assert.match(diff, /selection\.txt.*\(diff\)/);
+      assert.match(diff, /Staged\n@@[^\n]+@@/);
+      assert.match(diff, /Unstaged\n[\s\S]*?@@[^\n]+@@/);
+      assert(diff.includes('---counter') && diff.includes('++++counter'));
+      await page.locator('#show-files').click();
+      await page.locator('[data-path="src/App.tsx"]').click();
+      await page.waitForFunction(() =>
+        document.querySelector('.source-text')?.textContent.includes('export default'),
+      );
+      await application.evaluate(() => {
+        global.holdPreviewMenu = true;
+      });
+      await sourceSelection(2, 2);
+      await previewMenu();
+      await until(
+        () => application.evaluate(() => Boolean(global.releasePreviewMenu)),
+        'selection menu is waiting',
+      );
+      await page.locator('[data-path="src/styles.css"]').click();
+      await application.evaluate(() => global.releasePreviewMenu());
+      await page.evaluate(() => window.dwell.project());
+      assert.equal(await application.evaluate(() => global.previewDrafts.length), 5);
+      console.log(
+        'PASS: Ask Claude source boundaries, Markdown, diff context, native menu and stale file rejection',
+      );
+    } finally {
+      await application.evaluate(({ Menu, ipcMain }) => {
+        global.releasePreviewMenu?.();
+        Menu.prototype.popup = global.originalPreviewPopup;
+        ipcMain.removeHandler('terminal:claude-draft');
+        ipcMain.handle('terminal:claude-draft', global.originalDraftHandler);
+        delete global.releasePreviewMenu;
+        delete global.holdPreviewMenu;
+      });
+      git('restore', '--staged', '--worktree', '--', 'selection.txt');
+      await page.locator('#show-files').click();
+      await page.locator('[data-path="src/App.tsx"]').click();
+      await activeInput().focus();
+    }
     assert(
       await page
         .locator('.xterm-helper-textarea')

@@ -6,7 +6,7 @@ Interactive Claude Code **2.1.295+** reports its state through OSC 7501. Dwell a
 
 Reports belong to their originating terminal. Native state is authoritative while the program runs, so old progress events, hook alerts and bells cannot produce competing states or duplicate chimes. Dwell groups up to 64 program records per terminal and prioritizes errors, requests for input, completed work and running work. Closing a tab removes its state. A shell prompt or OS-confirmed return to the shell clears running and blocked states; completed work and reported errors remain until acknowledged or replaced.
 
-Only status and a fixed reason are shown outside the terminal. Reported messages, titles and application names are discarded. Native status cannot change a folder, identify a saved conversation or grant preview access. The optional hooks below still provide validated workspace context.
+Only status and a fixed reason are shown outside the terminal. Reported messages and titles are discarded. Dwell retains the root application name only as a hint for Claude input, checked against the local foreground process before pasting. Native status cannot change a folder, identify a saved conversation or grant preview access. The optional hooks below still provide validated workspace context.
 
 Source: [Claude's native terminal status documentation](https://code.claude.com/docs/en/terminal-config#see-session-status-in-your-terminal) and the [OSC 7501 specification](https://www.superlogical.com/rex/docs/build/program-status), checked 2026-10-12.
 

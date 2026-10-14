@@ -301,6 +301,7 @@ async function pollDirectory(state, session) {
       session.revision !== revision
     )
       return;
+    session.claudeInput = null;
     attention.prompt(state, session.id);
     if (state.activeSession !== session.id) return;
     if (directory === session.cwd && !session.claudeLive) return;
@@ -454,6 +455,83 @@ handle('terminal:menu', (state) =>
     { label: 'New Claude Worktree…', click: () => send(state, 'menu:action', 'new-worktree') },
   ]).popup({ window: state.window }),
 );
+handle('preview:menu', (state, scope) => {
+  activeTerminal(state, scope);
+  return new Promise((resolve) => {
+    Menu.buildFromTemplate([{ label: 'Ask Claude', click: () => resolve(true) }]).popup({
+      window: state.window,
+      callback: () => resolve(false),
+    });
+  });
+});
+
+function activeTerminal(state, scope) {
+  const session = state.sessions.get(scope?.id);
+  if (
+    !session?.process ||
+    session.finishExit ||
+    state.window.isDestroyed() ||
+    state.activeSession !== session.id ||
+    session.revision !== scope.revision
+  )
+    throw new Error('The active terminal changed. Try again.');
+  return session;
+}
+
+function observeClaudeInput(session) {
+  if (!session.claudeObservation) {
+    const pending = foregroundDirectory(session.process.pid).finally(() => {
+      if (session.claudeObservation === pending) session.claudeObservation = null;
+    });
+    session.claudeObservation = pending;
+  }
+  session.claudeInput = session.claudeObservation;
+}
+
+async function writeClaudeInput(state, scope, data) {
+  const session = activeTerminal(state, scope);
+  const processHandle = session.process;
+  const inputActivity = session.inputActivity || 0;
+  const identity = session.claudeInput;
+  const [reported, foreground] = await Promise.all([
+    identity,
+    foregroundDirectory(processHandle.pid),
+  ]);
+  if (
+    activeTerminal(state, scope) !== session ||
+    session.process !== processHandle ||
+    session.claudeInput !== identity ||
+    (session.inputActivity || 0) !== inputActivity
+  )
+    throw new Error('The terminal input changed. Try again.');
+  const commands = foreground?.commands;
+  const shellOnly = commands?.every(
+    (command) =>
+      /^(?:zsh|bash|fish|sh|dash|ksh|nu)$/.test(command) ||
+      command === path.basename(process.env.SHELL || '/bin/zsh'),
+  );
+  if (shellOnly) session.claudeInput = null;
+  if (
+    !commands?.length ||
+    shellOnly ||
+    commands.some((command) => ['ssh', 'mosh-client', 'tmux', 'screen'].includes(command)) ||
+    (reported?.identity !== foreground.identity && !commands.includes('claude'))
+  )
+    throw new Error('Start an interactive Claude Code session in this tab first.');
+  session.inputActivity = inputActivity + 1;
+  processHandle.write(data);
+}
+
+handle('terminal:claude-draft', async (state, scope, text) => {
+  if (typeof text !== 'string' || Buffer.byteLength(text) > 64 * 1024)
+    throw new Error('Select up to 64 KiB of preview text.');
+  // Preview text must not close bracketed paste or send terminal control keys.
+  // eslint-disable-next-line no-control-regex
+  const draft = text.replace(/\r\n?/g, '\n').replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '');
+  if (!draft.trim()) throw new Error('Select preview text to ask Claude about.');
+  await writeClaudeInput(state, scope, `\x1b[200~${draft}\x1b[201~`);
+  return true;
+});
 scoped('git:changes', (root) => listChanges(root));
 scoped('git:diff', (root, relative) => readDiff(root, relative));
 scoped('files:reference', async (root, relative) => {
@@ -802,6 +880,8 @@ handle('terminal:start', async (state, id, cols, rows, mode = 'shell', task) => 
     session.nonce = randomUUID();
     session.closedConversations.clear();
     session.claudeLive = false;
+    session.claudeInput = null;
+    session.claudeObservation = null;
     attention.clear(state, id);
     env.DWELL_CLAUDE_NONCE = session.nonce;
     ensureOpen();
@@ -839,6 +919,7 @@ handle('terminal:start', async (state, id, cols, rows, mode = 'shell', task) => 
         session.process = null;
         session.cwd = null;
         session.claudeLive = false;
+        session.claudeInput = null;
         session.nonce = null;
         if (session.worktree) reservedWorktrees.delete(session.worktree.name);
         if (session.status === 'starting') session.status = 'unavailable';
@@ -851,7 +932,6 @@ handle('terminal:start', async (state, id, cols, rows, mode = 'shell', task) => 
       if (!session.pendingBytes) session.finishExit();
     });
     return {
-      shell: mode === 'shell' || mode === 'recover' ? path.basename(loginShell) : 'Claude',
       context: publicContext(state, session),
     };
   } catch (error) {
@@ -888,6 +968,7 @@ handle('terminal:claude', async (state, id, data) => {
   if (event.event === 'SessionEnd') {
     session.closedConversations.add(event.id);
     session.claudeLive = false;
+    session.claudeInput = null;
     session.cwd = null;
     attention.progress(state, id, 0);
     contextChanged(state, session);
@@ -991,6 +1072,7 @@ handle('terminal:claude', async (state, id, data) => {
     session.branch !== info.branch ||
     session.status !== 'ready';
   session.conversationId = event.id;
+  observeClaudeInput(session);
   session.launcher ||= launcherKey();
   if (!identityOnly)
     Object.assign(session, {
@@ -1053,6 +1135,10 @@ handle('terminal:program-status', (state, id, data) => {
   if (report.query) {
     if (!session.finishExit) session.process.write(PROGRAM_STATUS_REPLY);
   } else {
+    if (!report.id && (report.state === 'clear' || report.app !== undefined)) {
+      if (report.state !== 'clear' && report.app === 'claude-code') observeClaudeInput(session);
+      else session.claudeInput = null;
+    }
     attention.program(state, id, report);
     scheduleDirectory(state, session);
   }
@@ -1063,6 +1149,7 @@ ipcMain.on('terminal:status-boundary', (event, id, boundary) => {
     const session = state.sessions.get(id);
     if (!session?.process || !['prompt', 'reset'].includes(boundary)) return;
     session.activitySequence = (session.activitySequence || 0) + 1;
+    session.claudeInput = null;
     if (boundary === 'reset') attention.reset(state, id);
     else attention.prompt(state, id);
   } catch {}
@@ -1086,7 +1173,10 @@ ipcMain.on('terminal:bell', async (event, id, label) => {
           session.activitySequence !== sequence
         )
           return;
-        if (directory) attention.prompt(state, id);
+        if (directory) {
+          session.claudeInput = null;
+          attention.prompt(state, id);
+        }
       } finally {
         session.bellChecking = false;
       }
@@ -1119,6 +1209,7 @@ ipcMain.on('terminal:input', (event, id, data) => {
     const state = validState(event);
     const session = state.sessions.get(id);
     if (typeof data === 'string' && data.length <= 2 * 1024 * 1024) {
+      if (session) session.inputActivity = (session.inputActivity || 0) + 1;
       // A normal shell can return from Claude without SessionEnd reaching its hidden UI.
       if (
         session?.kind === 'shell' &&
@@ -1158,7 +1249,26 @@ ipcMain.on('terminal:ack', (event, id, size) => {
 handle('clipboard:write', async (_state, text) => {
   if (typeof text === 'string' && text.length < 2 * 1024 * 1024) await clipboard.writeText(text);
 });
-handle('clipboard:read', async () => (await clipboard.readText()).slice(0, 2 * 1024 * 1024));
+handle('clipboard:read', async (state, scope) => {
+  if (scope) {
+    const session = activeTerminal(state, scope);
+    const processHandle = session.process;
+    const inputActivity = session.inputActivity || 0;
+    const identity = session.claudeInput;
+    if (await clipboard.has('image/png')) {
+      if (
+        activeTerminal(state, scope) !== session ||
+        session.process !== processHandle ||
+        session.claudeInput !== identity ||
+        (session.inputActivity || 0) !== inputActivity
+      )
+        throw new Error('The terminal input changed. Try again.');
+      await writeClaudeInput(state, scope, '\x16');
+      return null;
+    }
+  }
+  return (await clipboard.readText()).slice(0, 2 * 1024 * 1024);
+});
 handle('link:open', async (_state, url) => {
   if (typeof url !== 'string' || url.length > 4096) return;
   const parsed = new URL(url);
