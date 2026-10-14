@@ -42,6 +42,8 @@ process.stdin.on('data', (data) => {
     else if (command === 'legacy-idle') process.stdout.write('\x1b]9;4;0\x07');
     else if (command === 'legacy-error') process.stdout.write('\x1b]9;4;2\x07');
     else if (command === 'bell-burst') process.stdout.write('\x07'.repeat(100));
+    else if (command === 'native-burst')
+      process.stdout.write('\x1b]7501;state=working:app=claude-code\x1b\\'.repeat(100));
     else if (command === 'invalid') report('error', ':msg=YQo=');
     else if (command === 'oversize') report('error', ':msg=' + 'a'.repeat(5000));
     else if (command.startsWith('forged '))

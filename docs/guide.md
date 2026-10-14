@@ -2,7 +2,7 @@
 
 Dwell is a small terminal workspace for macOS on Apple Silicon. It uses your existing shell and command-line tools.
 
-This guide describes **Dwell 0.9.0**, including opening folders in tabs, native Claude notifications, independent tab contexts, folder following, update checks, Line tab colors, Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
+This guide describes **Dwell 0.10.0**, including screenshot paste and preview selections for Claude, folders in tabs, native notifications, independent tab contexts, folder following, update checks, Line tab colors, Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
 
 ## Install
 
@@ -65,6 +65,18 @@ Terminal text size is saved per project, from 11 to 24 px. Resizing or zooming k
 | ⌘+ / ⌘− / ⌘0 | Increase / decrease / reset terminal text size |
 
 ## Claude workspaces
+
+### Bring context into Claude
+
+Copy a screenshot or image, focus a running local Claude session, and press **⌘V** (or **Edit → Paste**). Dwell forwards Claude's native image-paste shortcut; Claude attaches the image from the clipboard. Ordinary text paste is unchanged. This requires a local interactive Claude session that Dwell can identify; it does not transfer images to remote SSH sessions.
+
+Select text in a preview, right-click and choose **Ask Claude**. **Shift+F10** opens the same menu with the preview focused. Dwell inserts the excerpt into the current tab's running Claude session, then returns focus to the terminal. Add your question and press Enter when ready: nothing is submitted automatically.
+
+Source previews include the file path and selected line range, with complete lines for context. Rendered Markdown is labelled as a visible excerpt; Git selections retain their diff section and hunk context. They do not pretend to be exact current-file line numbers. Select **View Markdown source** when you need source line numbers.
+
+If the tab is at a shell prompt or Claude has exited, Dwell asks you to start Claude in that tab. It never starts a conversation or selects another tab on your behalf.
+
+### Isolate and resume work
 
 Workspaces require **Claude Code 2.1.296 or later**, the version verified with this implementation. Older clients retain ordinary terminals and compatible progress notifications; Dwell never updates Claude automatically.
 

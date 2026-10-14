@@ -23,14 +23,15 @@ async function foregroundDirectory(pid) {
     const directory = fields.find((field) => field.startsWith('n'))?.slice(1);
     if (!fields.includes('p' + group) || !fields.includes('fcwd') || !cleanPath(directory))
       return null;
-    const members = await execute('/bin/ps', ['-g', group, '-o', 'comm='], options);
+    const members = await execute('/bin/ps', ['-g', group, '-o', 'pid=,comm='], options);
+    const identity = members.stdout.trim();
     const commands = members.stdout
       .split('\n')
       .filter(Boolean)
-      .map((command) => path.basename(command.trim()).replace(/^-/, ''));
+      .map((command) => path.basename(command.trim().replace(/^\d+\s+/, '')).replace(/^-/, ''));
     if (!commands.length) return null;
     // A foreground program may have replaced the shell while lsof was reading it.
-    return (await foreground()) === group ? { cwd: directory, commands } : null;
+    return (await foreground()) === group ? { cwd: directory, commands, identity } : null;
   } catch {
     return null;
   }

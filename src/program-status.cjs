@@ -47,12 +47,17 @@ function parseProgramStatus(data) {
     if (key === 'msg' && !validText(value, 2048)) return null;
     if (key === 'title' && !validText(value, 192)) return null;
     if (!/^[A-Za-z0-9_.,+/=-]*$/.test(value)) continue;
-    if (key === 'state' || key === 'id' || key === 'kind') fields[key] = value;
+    if (key === 'state' || key === 'id' || key === 'kind' || key === 'app') fields[key] = value;
   }
   const { state, kind } = fields;
   if (!states.has(state)) return null;
   const id = fields.id ?? '';
-  return { state, id, kind: state === 'blocked' && kinds.has(kind) ? kind : undefined };
+  return {
+    state,
+    id,
+    kind: state === 'blocked' && kinds.has(kind) ? kind : undefined,
+    ...(fields.app === undefined ? {} : { app: fields.app }),
+  };
 }
 
 module.exports = { PROGRAM_STATUS_REPLY, parseProgramStatus };

@@ -194,7 +194,7 @@ async function until(check, label) {
       // Observe real children even when a module captured execFile before this test.
       ChildProcess.prototype.spawn = function (options) {
         const result = global.nativeStatusSpawn.call(this, options);
-        if (options.file === '/bin/ps') {
+        if (options.file === '/bin/ps' || options.file === '/usr/sbin/lsof') {
           const metrics = global.nativeStatusPs;
           metrics.total++;
           metrics.maximum = Math.max(metrics.maximum, ++metrics.running);
@@ -218,18 +218,34 @@ async function until(check, label) {
       );
       const metrics = await application.evaluate(() => global.nativeStatusPs);
       assert(
-        metrics.maximum <= 2,
+        metrics.maximum <= 3,
         'bell bursts bound simultaneous OS checks: ' + JSON.stringify(metrics),
       );
       assert.equal(await orb.locator('#orb').getAttribute('data-status'), 'working');
       assert.equal(await sounds(), before, 'bells cannot replay a native program alert');
+      await application.evaluate(() => {
+        global.nativeStatusPs = { running: 0, total: 0, maximum: 0 };
+      });
+      await report(first, 'native-burst', 'working');
+      await until(
+        () =>
+          application.evaluate(
+            () => global.nativeStatusPs.total > 0 && global.nativeStatusPs.running === 0,
+          ),
+        'native identity checks finish after the status burst',
+      );
+      const nativeMetrics = await application.evaluate(() => global.nativeStatusPs);
+      assert(
+        nativeMetrics.maximum <= 2,
+        'native report bursts bound simultaneous OS checks: ' + JSON.stringify(nativeMetrics),
+      );
     } finally {
       await application.evaluate(() => {
         process.getBuiltinModule('child_process').ChildProcess.prototype.spawn =
           global.nativeStatusSpawn;
       });
     }
-    console.log('PASS: a burst of 100 bells keeps native work quiet and bounds OS process checks');
+    console.log('PASS: bursts of 100 bells and native reports bound OS process checks');
 
     for (const command of ['legacy-idle', 'legacy-error', 'invalid', 'oversize']) {
       await report(first, command);

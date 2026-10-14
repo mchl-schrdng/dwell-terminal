@@ -3,7 +3,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { $, node, icon, refreshIcons } from './ui.js';
-import { renderCode, renderMarkdown, renderDiff } from './preview.js';
+import { renderCode, renderMarkdown, renderDiff, selectionContext } from './preview.js';
 import { references } from './references.cjs';
 import { TAB_COLORS, tabColor } from './tab-colors.cjs';
 
@@ -1312,9 +1312,16 @@ async function action(name) {
     if (document.querySelector('dialog[open], :popover-open')) return;
     const target = activeSession;
     if (target) {
+      const context = scope(target);
       target.terminal.focus();
-      const text = await api.paste();
-      if (sessions.has(target.id) && !document.querySelector('dialog[open], :popover-open'))
+      const text = await api.paste(context);
+      if (
+        typeof text === 'string' &&
+        activeSession === target &&
+        target.running &&
+        target.context.revision === context.revision &&
+        !document.querySelector('dialog[open], :popover-open')
+      )
         target.terminal.paste(text);
     }
     return;
@@ -1455,6 +1462,42 @@ $('#preview-pane').addEventListener('keydown', (event) => {
   event.preventDefault();
   event.stopPropagation();
   togglePane('preview');
+});
+async function askPreview() {
+  const target = activeSession;
+  const context = scope(target);
+  const file = lastPreview;
+  const relative = selected;
+  const view = $('#preview-content').firstElementChild;
+  const text = selectionContext($('#preview-content'), file, relative);
+  if (!text || !target?.running) return;
+  if (!(await api.previewMenu(context))) return;
+  if (
+    activeSession !== target ||
+    !target.running ||
+    target.context.revision !== context.revision ||
+    lastPreview !== file ||
+    selected !== relative ||
+    $('#preview-content').firstElementChild !== view ||
+    !settings.showPreview ||
+    focusMode
+  )
+    return;
+  await api.askClaude(context, text);
+  if (activeSession === target) {
+    window.getSelection()?.removeAllRanges();
+    target.terminal.focus();
+    message('Context added to Claude. Add your question, then press Enter.');
+  }
+}
+$('#preview-content').addEventListener('contextmenu', (event) => {
+  event.preventDefault();
+  askPreview().catch(report);
+});
+$('#preview-content').addEventListener('keydown', (event) => {
+  if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+  event.preventDefault();
+  askPreview().catch(report);
 });
 $('#review-changes').addEventListener('click', () => {
   if (!settings) return;
