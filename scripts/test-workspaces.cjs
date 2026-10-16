@@ -380,6 +380,42 @@ async function until(check, label) {
         document.querySelector('.xterm-rows')?.textContent.includes('DWELL_READY>'),
       );
       const nestedWindow = await application.browserWindow(nested);
+      const projectWindow = await application.browserWindow(page);
+      // Cocoa updates isFocused() before dispatching the focus event used by the app.
+      await projectWindow.evaluate((window) => {
+        window.dockFocusObserved = false;
+        window.once('focus', () => {
+          window.dockFocusObserved = true;
+        });
+      });
+      await nestedWindow.evaluate((window) => window.minimize());
+      await until(
+        () => nestedWindow.evaluate((window) => window.isMinimized()),
+        'second window minimized',
+      );
+      await projectWindow.evaluate((window) => window.focus());
+      await until(
+        () => projectWindow.evaluate((window) => window.isFocused() && window.dockFocusObserved),
+        'original window last focused',
+      );
+      await projectWindow.evaluate((window) => {
+        delete window.dockFocusObserved;
+      });
+      await projectWindow.evaluate((window) => window.minimize());
+      await until(
+        () => projectWindow.evaluate((window) => window.isMinimized()),
+        'both workspaces minimized',
+      );
+      await application.evaluate(({ app }) => app.emit('activate', {}, true));
+      await until(
+        () => projectWindow.evaluate((window) => !window.isMinimized() && window.isFocused()),
+        'Dock restores the last-used workspace rather than the last-created window or orb',
+      );
+      assert(await nestedWindow.evaluate((window) => window.isMinimized()));
+      assert.equal((await context(a.id)).conversationId, a.conversationId);
+      console.log(
+        'PASS: Dock activation restores only the last-used workspace and preserves Claude',
+      );
       await nestedWindow.evaluate((window) => window.destroy());
       await page.bringToFront();
     } finally {
@@ -1162,7 +1198,7 @@ async function until(check, label) {
     await fs.mkdir(path.join(root, 'test-results'), { recursive: true });
     if (page && !page.isClosed()) {
       await page
-        .screenshot({ path: path.join(root, 'test-results/workspaces-failure.png') })
+        .screenshot({ path: path.join(root, 'test-results/workspaces-failure.png'), timeout: 5000 })
         .catch(() => {});
       await fs.writeFile(
         path.join(root, 'test-results/workspaces-failure.txt'),

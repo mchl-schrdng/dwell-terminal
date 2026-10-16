@@ -2,7 +2,7 @@
 
 Dwell is a small terminal workspace for macOS on Apple Silicon. It uses your existing shell and command-line tools.
 
-This guide describes **Dwell 0.10.0**, including screenshot paste and preview selections for Claude, folders in tabs, native notifications, independent tab contexts, folder following, update checks, Line tab colors, Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
+This guide describes **Dwell 0.10.1**, including screenshot paste and preview selections for Claude, folders in tabs, native notifications, independent tab contexts, folder following, update checks, Line tab colors, Focus, worktrees, saved conversation resume, file references and the Eclipse reason card.
 
 ## Install
 

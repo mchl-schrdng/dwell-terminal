@@ -103,6 +103,49 @@ async function until(check, description, timeout = 12000) {
         document.hasFocus() &&
         document.querySelector('.xterm-rows')?.textContent.includes('DWELL_TEST_READY>'),
     );
+    const dockWindow = await application.browserWindow(page);
+    const dockTabs = await page
+      .locator('[role=tab]')
+      .evaluateAll((tabs) => tabs.map((tab) => tab.id));
+    await page.locator('.xterm-helper-textarea').focus();
+    await page.keyboard.type('dock-kept-input');
+    await page.waitForFunction(() =>
+      document.querySelector('.xterm-rows')?.textContent.includes('dock-kept-input'),
+    );
+    await dockWindow.evaluate((window) => window.minimize());
+    await until(() => dockWindow.evaluate((window) => window.isMinimized()), 'window minimized');
+    // The orb is still visible, so Electron's hasVisibleWindows flag is not a workspace check.
+    await application.evaluate(({ app }) => app.emit('activate', {}, true));
+    await until(
+      () =>
+        dockWindow.evaluate(
+          (window) => !window.isMinimized() && window.isVisible() && window.isFocused(),
+        ),
+      'Dock activation restores the existing terminal window',
+    );
+    assert.deepEqual(
+      await page.locator('[role=tab]').evaluateAll((tabs) => tabs.map((tab) => tab.id)),
+      dockTabs,
+    );
+    assert((await page.locator('.xterm-rows').textContent()).includes('dock-kept-input'));
+    await dockWindow.evaluate((window) => window.hide());
+    await application.evaluate(({ app }) => app.emit('activate', {}, true));
+    await until(
+      () => dockWindow.evaluate((window) => window.isVisible() && window.isFocused()),
+      'Dock activation shows a hidden terminal without selecting the orb',
+    );
+    assert.equal(
+      await application.evaluate(
+        ({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows().filter(
+            (window) => window.webContents.getURL() === 'dwell://app/index.html',
+          ).length,
+      ),
+      1,
+      'activation reuses the existing workspace',
+    );
+    await page.keyboard.press('Control+c');
+    console.log('PASS: Dock activation restores a minimized terminal with its unfinished input');
     assert(await page.locator('#tree-pane').isHidden(), 'a new project starts without panels');
     assert(await page.locator('#preview-pane').isHidden());
     const emptyTitlebarRegions = await page.evaluate(() => {
