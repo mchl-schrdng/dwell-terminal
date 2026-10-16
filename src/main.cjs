@@ -50,6 +50,7 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'dwell', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 const windows = new Map();
+let lastWindow;
 const reservedWorktrees = new Set();
 let preferences = { projects: {}, desktopOrb: true };
 const preferencesPath = path.join(app.getPath('userData'), 'preferences.json');
@@ -74,6 +75,13 @@ function savePreferences() {
 
 function send(state, channel, value) {
   if (!state.window.isDestroyed()) state.window.webContents.send(channel, value);
+}
+
+function showWindow(window) {
+  if (window.isMinimized()) window.restore();
+  window.show();
+  app.focus({ steal: true });
+  window.focus();
 }
 
 function stopTerminals(state) {
@@ -181,8 +189,7 @@ async function createWindow(root) {
     }
     const existing = root && [...windows.values()].find((state) => state.root === root);
     if (existing) {
-      existing.window.show();
-      existing.window.focus();
+      showWindow(existing.window);
       return existing.window;
     }
   }
@@ -228,7 +235,10 @@ async function createWindow(root) {
   );
   window.webContents.session.setPermissionCheckHandler(() => false);
   window.on('ready-to-show', () => window.show());
-  window.on('focus', () => attention.reposition(window));
+  window.on('focus', () => {
+    lastWindow = window;
+    attention.reposition(window);
+  });
   for (const event of ['move', 'resize'])
     window.on(event, () => {
       if (window.isFocused()) attention.reposition(window);
@@ -261,6 +271,7 @@ async function createWindow(root) {
     for (const watcher of state.watchers.values()) watcher.close();
     stopTerminals(state);
     windows.delete(windowId);
+    if (lastWindow === window) lastWindow = null;
     if (!windows.size) attention.destroyOrb();
     else attention.reposition();
   });
@@ -807,8 +818,7 @@ handle('terminal:start', async (state, id, cols, rows, mode = 'shell', task) => 
                 !other.closedConversations.has(other.conversationId)))) &&
           other.conversationId === session.conversationId
         ) {
-          owner.window.show();
-          owner.window.focus();
+          showWindow(owner.window);
           send(owner, 'terminal:focus', other.id);
           return { existing: true };
         }
@@ -1478,6 +1488,8 @@ app.whenReady().then(async () => {
   if (preferences.desktopOrb) await attention.setEnabled(true);
 });
 app.on('activate', () => {
-  if (!windows.size) createWindow(preferences.lastRoot);
+  const window = lastWindow || [...windows.values()].at(-1)?.window;
+  if (window) showWindow(window);
+  else createWindow(preferences.lastRoot);
 });
 app.on('window-all-closed', () => app.quit());

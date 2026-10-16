@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.1
+
+- Restore the last-used terminal window when clicking the Dock icon, including minimized or hidden windows while Eclipse is visible. Keep existing tabs, unfinished input and running sessions intact.
+
 ## 0.10.0
 
 - Paste clipboard images into a local interactive Claude session with ⌘V or Edit → Paste, using Claude's native attachment handling.
